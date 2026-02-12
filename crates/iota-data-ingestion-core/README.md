@@ -522,3 +522,5 @@ As an example of a custom indexer the `iota-data-ingestion-core` is used in the 
 new rollout plan format
 
 looks nice
+
+very nice indeed
