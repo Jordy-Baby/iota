@@ -517,3 +517,6 @@ As an example of a custom indexer the `iota-data-ingestion-core` is used in the 
 - **iota-indexer**: The primary function of the indexer is to provide historical data from the ledger, which is crucial for both Explorer and developers who want to utilize ledger data in their applications. By pre-processing and storing this data, the indexer significantly reduces the load on the full node, preventing performance degradation from frequent queries. The data is stored in `PostgreSQL`.
 
 - **iota-analytics-indexer**: This specialized indexer is designed to extract and export relevant blockchain data from the IOTA network. It collects and stores data related to network statistics (such as transaction volume and throughput), user activity (including the number of active addresses and transaction patterns), and smart contract interactions (e.g., Move call executions). The extracted data is efficiently stored in Object Storage, such as **AWS S3**. Subsequently, this raw data is transferred to specialized data warehouses like **BigQuery** or **Snowflake**. These columnar databases are optimized for handling large datasets and performing complex analytical queries, enabling in-depth analysis of IOTA network activity.
+
+
+new rollout plan format
