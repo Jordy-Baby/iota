@@ -105,6 +105,7 @@ members = [
   "crates/iota-ledger",
   "crates/iota-ledger-signer",
   "crates/iota-light-client",
+  "crates/iota-local-executor",
   "crates/iota-localnet",
   "crates/iota-macros",
   "crates/iota-mainnet-unlocks",
@@ -417,6 +418,7 @@ iota-keys = { path = "crates/iota-keys" }
 iota-kvstore = { path = "crates/iota-kvstore" }
 iota-ledger = { path = "crates/iota-ledger" }
 iota-ledger-signer = { path = "crates/iota-ledger-signer" }
+iota-local-executor = { path = "crates/iota-local-executor" }
 iota-localnet = { path = "crates/iota-localnet" }
 iota-macros = { path = "crates/iota-macros" }
 iota-mainnet-unlocks = { path = "crates/iota-mainnet-unlocks" }
