@@ -29,7 +29,7 @@ use std::collections::BTreeSet;
 use anyhow::Result;
 use iota_framework::BuiltInFramework;
 use iota_json_rpc_types::IotaObjectDataOptions;
-use iota_local_executor::{InMemoryStore, OfflineExecutor};
+use iota_local_executor::{InMemoryStore, OfflineExecutor, VmChecks};
 use iota_protocol_config::{Chain, ProtocolConfig, ProtocolVersion};
 use iota_sdk::{IotaClient, IotaClientBuilder};
 use iota_types::{
@@ -239,7 +239,7 @@ async fn main() -> Result<()> {
     println!("  Sender: {}", transaction.sender());
     println!("  Gas budget: {}", transaction.gas_budget());
 
-    let result = executor.dev_inspect(transaction)?;
+    let result = executor.simulate_transaction(transaction, VmChecks::Disabled)?;
 
     // ---------------------------------------------------------------
     // Print results

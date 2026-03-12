@@ -16,7 +16,7 @@
 
 use anyhow::Result;
 use iota_framework::BuiltInFramework;
-use iota_local_executor::{InMemoryStore, OfflineExecutor};
+use iota_local_executor::{InMemoryStore, OfflineExecutor, VmChecks};
 use iota_protocol_config::ProtocolVersion;
 use iota_types::{
     effects::TransactionEffectsAPI,
@@ -54,7 +54,7 @@ fn main() -> Result<()> {
     println!("  Sender: {}", transaction.sender());
 
     // Execute fully offline
-    let result = executor.dev_inspect(transaction)?;
+    let result = executor.simulate_transaction(transaction, VmChecks::Disabled)?;
 
     // Check for execution errors
     if let Err(ref err) = result.execution_result {

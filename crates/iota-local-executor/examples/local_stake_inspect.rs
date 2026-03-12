@@ -15,7 +15,7 @@
 //!   cargo run --example local_stake_inspect
 
 use anyhow::Result;
-use iota_local_executor::LocalExecutor;
+use iota_local_executor::{LocalExecutor, VmChecks};
 use iota_sdk::IotaClientBuilder;
 use iota_types::{
     effects::TransactionEffectsAPI,
@@ -58,7 +58,9 @@ async fn main() -> Result<()> {
     }
 
     // Execute locally — objects are fetched from devnet, but execution is local
-    let result = executor.dev_inspect(transaction).await?;
+    let result = executor
+        .simulate_transaction(transaction, VmChecks::Disabled)
+        .await?;
 
     // Check for execution errors
     if let Err(ref err) = result.execution_result {

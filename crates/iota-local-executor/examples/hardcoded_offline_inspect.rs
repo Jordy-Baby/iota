@@ -17,7 +17,7 @@
 
 use anyhow::Result;
 use iota_framework::BuiltInFramework;
-use iota_local_executor::{InMemoryStore, OfflineExecutor};
+use iota_local_executor::{InMemoryStore, OfflineExecutor, VmChecks};
 use iota_protocol_config::ProtocolVersion;
 use iota_types::{
     effects::TransactionEffectsAPI,
@@ -106,7 +106,7 @@ fn main() -> Result<()> {
     println!("  Sender: {}", transaction.sender());
     println!("  Gas budget: {}", transaction.gas_budget());
 
-    let result = executor.dev_inspect(transaction)?;
+    let result = executor.simulate_transaction(transaction, VmChecks::Disabled)?;
 
     // ---------------------------------------------------------------
     // 4. Print results

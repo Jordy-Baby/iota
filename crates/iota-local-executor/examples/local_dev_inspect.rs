@@ -13,7 +13,7 @@
 //!   cargo run --example local_dev_inspect
 
 use anyhow::Result;
-use iota_local_executor::LocalExecutor;
+use iota_local_executor::{LocalExecutor, VmChecks};
 use iota_sdk::IotaClientBuilder;
 use iota_types::{
     effects::TransactionEffectsAPI,
@@ -41,7 +41,9 @@ async fn main() -> Result<()> {
     println!("  Kind: {:?}", transaction.kind());
 
     // Execute locally — this is the local alternative to client.dry_run_tx()
-    let result = executor.dev_inspect(transaction).await?;
+    let result = executor
+        .simulate_transaction(transaction, VmChecks::Disabled)
+        .await?;
 
     // Check for execution errors
     if let Err(ref err) = result.execution_result {
