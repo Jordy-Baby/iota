@@ -5,7 +5,7 @@
 Provide a crate that allows running Move VM transactions **locally** (on the client side) without sending them to a node. The user provides transaction bytes (same format as the node JSON-RPC API), and this component:
 
 1. Parses the transaction data
-2. Fetches the required objects from a remote node (via JSON-RPC)
+2. Fetches the required objects from a remote node (via JSON-RPC, gRPC, or GraphQL)
 3. Executes the transaction locally using the same Move VM and execution engine as a full node
 4. Returns the execution result (effects, events, return values) to the caller
 
@@ -13,43 +13,21 @@ This enables fast, private dry-run and dev-inspect workflows without relying on 
 
 ## Architecture
 
-Two executor types are provided:
+Four executor types are provided:
 
-### LocalExecutor (fetches objects from a node)
-```
-┌────────────────┐      JSON-RPC         ┌──────────────┐
-│ LocalExecutor  │ ──── fetch objects ──▶│  IOTA Node   │
-│                │ ◀── objects ──────────│              │
-│  ┌───────────┐ │                       └──────────────┘
-│  │RemoteStore│ │  (caches objects in memory)
-│  └───────────┘ │
-│  ┌───────────┐ │
-│  │ Move VM   │ │  (iota-execution engine)
-│  └───────────┘ │
-│                │ ──▶ SimulateTransactionResult
-└────────────────┘
-```
+- **`JsonRpcExecutor`** — fetches objects via JSON-RPC
+- **`GrpcExecutor`** — fetches objects via gRPC
+- **`GraphqlExecutor`** — fetches objects via GraphQL
+- **`OfflineExecutor`** — fully offline, no network access
 
-### OfflineExecutor (fully offline, no network)
-```
-┌──────────────────┐
-│ OfflineExecutor  │
-│  ┌─────────────┐ │  (all objects provided upfront)
-│  │InMemoryStore│ │
-│  └─────────────┘ │
-│  ┌─────────────┐ │
-│  │  Move VM    │ │  (iota-execution engine)
-│  └─────────────┘ │
-│                  │ ──▶ SimulateTransactionResult
-└──────────────────┘
-```
+Each network-backed executor pre-fetches input objects in batch, then uses a local cache store (`JsonRpcStore`, `GrpcStore`, `GraphqlStore`) that also handles on-demand fetching of dynamically loaded objects during execution.
 
 ## Status
 
 ### Done
 
-- [x] Basic crate structure with `LocalExecutor` and `RemoteStore`
-- [x] `RemoteStore` implements `BackingStore` (ObjectStore + BackingPackageStore + ChildObjectResolver)
+- [x] Basic crate structure with `JsonRpcExecutor` and `JsonRpcStore`
+- [x] `JsonRpcStore` implements `BackingStore` (ObjectStore + BackingPackageStore + ChildObjectResolver)
 - [x] Pre-fetches input objects via batch `multi_get_object_with_options` RPC call
 - [x] On-demand fetching of dynamically loaded objects during execution (packages, child objects)
 - [x] `simulate_transaction()` — unified dry-run / dev-inspect via `VmChecks` parameter
@@ -64,8 +42,8 @@ Two executor types are provided:
 ### TODO
 
 - [x] ~~**Object version handling**~~ Done.
-- [ ] **Caching and reuse**: Allow the `RemoteStore` to persist across multiple executions, so packages and immutable objects don't need to be re-fetched.
-- [ ] **GraphQL support**: Add an alternative `RemoteStore` backend that uses the GraphQL API instead of JSON-RPC, which may be more efficient for complex queries.
+- [ ] **Caching and reuse**: Allow the `JsonRpcStore` to persist across multiple executions, so packages and immutable objects don't need to be re-fetched.
+- [x] ~~**GraphQL and gRPC support**~~ Done.
 - [ ] **Error reporting**: Improve error messages to clearly distinguish between local execution errors and remote fetch errors.
 - [ ] **Result formatting**: Add helpers to format `SimulateTransactionResult` into user-friendly output (similar to `DevInspectResults` / `DryRunTransactionBlockResponse` from JSON-RPC types).
 - [ ] **Protocol config caching**: Cache the protocol config and epoch info so that repeated executions don't re-fetch them.
@@ -73,5 +51,5 @@ Two executor types are provided:
 - [ ] **Event decoding**: Add helpers to decode Move events from the execution result.
 - [ ] **Multi-transaction support**: Support executing a sequence of transactions where later transactions see the state changes from earlier ones (useful for testing flows).
 - [x] ~~**Offline mode**~~ Done.
-- [ ] **Integration tests**: Add integration tests that run against a local test cluster.
+- [x] ~~**Integration tests**~~ Done.
 - [ ] **Benchmarks**: Compare local execution performance vs. remote dry-run to quantify the benefit.

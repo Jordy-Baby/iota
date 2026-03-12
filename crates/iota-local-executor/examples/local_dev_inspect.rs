@@ -13,7 +13,7 @@
 //!   cargo run --example local_dev_inspect
 
 use anyhow::Result;
-use iota_local_executor::{LocalExecutor, VmChecks};
+use iota_local_executor::{JsonRpcExecutor, VmChecks};
 use iota_sdk::IotaClientBuilder;
 use iota_types::{
     effects::TransactionEffectsAPI,
@@ -26,7 +26,7 @@ async fn main() -> Result<()> {
     let client = IotaClientBuilder::default().build_devnet().await?;
 
     // Create the local executor (fetches protocol config and epoch info)
-    let executor = LocalExecutor::new(client).await?;
+    let executor = JsonRpcExecutor::new(client).await?;
 
     // Base64-encoded transaction bytes for: 0x2::hash::blake2b256([0, 1, 2])
     let tx_bytes_base64 = "AAABAAQDAAECAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgRoYXNoCmJsYWtlMmIyNTYAAQEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA6AMAAAAAAAAAypo7AAAAAAA=";

@@ -15,7 +15,7 @@
 //!   cargo run --example local_stake_inspect
 
 use anyhow::Result;
-use iota_local_executor::{LocalExecutor, VmChecks};
+use iota_local_executor::{JsonRpcExecutor, VmChecks};
 use iota_sdk::IotaClientBuilder;
 use iota_types::{
     effects::TransactionEffectsAPI,
@@ -28,7 +28,7 @@ async fn main() -> Result<()> {
     let client = IotaClientBuilder::default().build_devnet().await?;
 
     // Create the local executor (fetches protocol config and epoch info)
-    let executor = LocalExecutor::new(client).await?;
+    let executor = JsonRpcExecutor::new(client).await?;
 
     // Base64-encoded transaction bytes for: 0x3::iota_system::request_add_stake
     // This involves:

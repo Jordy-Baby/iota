@@ -1,9 +1,12 @@
 // Copyright (c) 2026 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
-//! Core execution logic shared by both `LocalExecutor` and `OfflineExecutor`.
+//! Core execution logic shared by both `JsonRpcExecutor` and `OfflineExecutor`.
 
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::{BTreeMap, HashSet},
+    sync::Arc,
+};
 
 use anyhow::Result;
 use iota_config::{
@@ -12,7 +15,7 @@ use iota_config::{
 use iota_execution::Executor;
 use iota_protocol_config::{Chain, ProtocolConfig, ProtocolVersion};
 use iota_types::{
-    base_types::ObjectID,
+    base_types::{ObjectID, SequenceNumber},
     digests::TransactionDigest,
     effects::TransactionEffectsAPI,
     gas::IotaGasStatus,
@@ -66,7 +69,7 @@ impl ExecutionEnv {
 /// Run a transaction against the given store: validate, resolve objects, and
 /// execute.
 ///
-/// This is the single entry point for both `LocalExecutor` and
+/// This is the single entry point for both `JsonRpcExecutor` and
 /// `OfflineExecutor`.
 pub(crate) fn simulate(
     env: &ExecutionEnv,
@@ -238,4 +241,72 @@ fn build_receiving_objects(
         receiving_objects.push(ReceivingObjectReadResult::new(updated_ref, obj.into()));
     }
     Ok(receiving_objects.into())
+}
+
+// ---------------------------------------------------------------------------
+// Shared helpers for executor prefetch logic
+// ---------------------------------------------------------------------------
+
+/// Collect all unique object IDs referenced by a transaction (input objects,
+/// gas coins, and receiving objects).
+pub(crate) fn collect_all_object_ids(transaction: &TransactionData) -> Result<Vec<ObjectID>> {
+    let input_object_kinds = transaction.input_objects()?;
+    let receiving_object_refs = transaction.receiving_objects();
+
+    let mut ids: Vec<ObjectID> = input_object_kinds
+        .iter()
+        .map(|kind| kind.object_id())
+        .collect();
+    for gas_ref in transaction.gas() {
+        ids.push(gas_ref.0);
+    }
+    for objref in &receiving_object_refs {
+        ids.push(objref.0);
+    }
+    ids.sort();
+    ids.dedup();
+    Ok(ids)
+}
+
+/// Split a transaction's object references into two buckets:
+///
+/// - **versioned**: owned/immutable objects (and gas/receiving objects) with
+///   their exact transaction version.
+/// - **latest**: shared objects and packages that should be fetched at the
+///   latest version.
+///
+/// Objects that appear in the `latest` set are removed from `versioned`.
+pub(crate) fn split_transaction_refs(
+    transaction: &TransactionData,
+) -> Result<(BTreeMap<ObjectID, SequenceNumber>, Vec<ObjectID>)> {
+    let input_object_kinds = transaction.input_objects()?;
+    let receiving_object_refs = transaction.receiving_objects();
+
+    let mut versioned: BTreeMap<ObjectID, SequenceNumber> = BTreeMap::new();
+    let mut latest: Vec<ObjectID> = Vec::new();
+
+    for kind in &input_object_kinds {
+        match kind {
+            InputObjectKind::ImmOrOwnedMoveObject(objref) => {
+                versioned.insert(objref.0, objref.1);
+            }
+            InputObjectKind::SharedMoveObject { id, .. } => latest.push(*id),
+            InputObjectKind::MovePackage(id) => latest.push(*id),
+        }
+    }
+    for gas_ref in transaction.gas() {
+        versioned.entry(gas_ref.0).or_insert(gas_ref.1);
+    }
+    for objref in &receiving_object_refs {
+        versioned.entry(objref.0).or_insert(objref.1);
+    }
+
+    // An object shouldn't appear in both sets, but be safe.
+    for id in &latest {
+        versioned.remove(id);
+    }
+    latest.sort();
+    latest.dedup();
+
+    Ok((versioned, latest))
 }

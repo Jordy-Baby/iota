@@ -1,9 +1,8 @@
 // Copyright (c) 2026 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
-//! [`LocalExecutor`] — fetches objects from a remote node and executes locally.
-
-use std::collections::BTreeMap;
+//! [`JsonRpcExecutor`] — fetches objects from a remote node via JSON-RPC and
+//! executes locally.
 
 use anyhow::{Result, anyhow, bail};
 use iota_json_rpc_types::{
@@ -11,15 +10,14 @@ use iota_json_rpc_types::{
 };
 use iota_sdk::IotaClient;
 use iota_types::{
-    base_types::{ObjectID, SequenceNumber},
     object::Object,
-    transaction::{InputObjectKind, TransactionData, TransactionDataAPI},
+    transaction::TransactionData,
     transaction_executor::{SimulateTransactionResult, VmChecks},
 };
 
 use crate::{
-    RemoteStore,
-    execution::{self, ExecutionEnv},
+    caching_store::{JsonRpcFetcher, JsonRpcStore},
+    execution::{self, ExecutionEnv, collect_all_object_ids, split_transaction_refs},
 };
 
 /// Controls how objects are fetched from the remote node.
@@ -40,14 +38,14 @@ pub enum ObjectFetchMode {
 
 /// A local executor that runs Move VM transactions by fetching objects from a
 /// remote node.
-pub struct LocalExecutor {
+pub struct JsonRpcExecutor {
     client: IotaClient,
     env: ExecutionEnv,
     fetch_mode: ObjectFetchMode,
 }
 
-impl LocalExecutor {
-    /// Create a new `LocalExecutor` connected to the given IOTA JSON-RPC
+impl JsonRpcExecutor {
+    /// Create a new `JsonRpcExecutor` connected to the given IOTA JSON-RPC
     /// endpoint. Uses [`ObjectFetchMode::UseTransactionVersions`] by
     /// default.
     pub async fn new(client: IotaClient) -> Result<Self> {
@@ -106,7 +104,7 @@ impl LocalExecutor {
         transaction: TransactionData,
         checks: VmChecks,
     ) -> Result<SimulateTransactionResult> {
-        let store = RemoteStore::new(self.client.clone());
+        let store = JsonRpcStore::new(JsonRpcFetcher(self.client.clone()));
         self.prefetch_objects(&store, &transaction).await?;
         execution::simulate(&self.env, &store, transaction, checks)
     }
@@ -114,7 +112,7 @@ impl LocalExecutor {
     /// Fetch all objects referenced by the transaction from the remote node.
     async fn prefetch_objects(
         &self,
-        store: &RemoteStore,
+        store: &JsonRpcStore,
         transaction: &TransactionData,
     ) -> Result<()> {
         let options = IotaObjectDataOptions::full_content()
@@ -135,38 +133,25 @@ impl LocalExecutor {
     /// Fetch all objects at their latest version.
     async fn fetch_all_latest(
         &self,
-        store: &RemoteStore,
+        store: &JsonRpcStore,
         transaction: &TransactionData,
         options: IotaObjectDataOptions,
     ) -> Result<()> {
-        let input_object_kinds = transaction.input_objects()?;
-        let receiving_object_refs = transaction.receiving_objects();
-
-        let mut object_ids: Vec<ObjectID> = input_object_kinds
-            .iter()
-            .map(|kind| kind.object_id())
-            .collect();
-        for gas_ref in transaction.gas() {
-            object_ids.push(gas_ref.0);
+        let object_ids = collect_all_object_ids(transaction)?;
+        if object_ids.is_empty() {
+            return Ok(());
         }
-        for objref in &receiving_object_refs {
-            object_ids.push(objref.0);
-        }
-        object_ids.sort();
-        object_ids.dedup();
 
-        if !object_ids.is_empty() {
-            let responses = self
-                .client
-                .read_api()
-                .multi_get_object_with_options(object_ids, options)
-                .await?;
+        let responses = self
+            .client
+            .read_api()
+            .multi_get_object_with_options(object_ids, options)
+            .await?;
 
-            for response in responses {
-                if let Some(data) = response.data {
-                    let obj: Object = data.try_into()?;
-                    store.insert(obj);
-                }
+        for response in responses {
+            if let Some(data) = response.data {
+                let obj: Object = data.try_into()?;
+                store.insert(obj);
             }
         }
 
@@ -177,38 +162,11 @@ impl LocalExecutor {
     /// shared objects and packages at the latest version.
     async fn fetch_versioned(
         &self,
-        store: &RemoteStore,
+        store: &JsonRpcStore,
         transaction: &TransactionData,
         options: IotaObjectDataOptions,
     ) -> Result<()> {
-        let input_object_kinds = transaction.input_objects()?;
-        let receiving_object_refs = transaction.receiving_objects();
-
-        let mut versioned: BTreeMap<ObjectID, SequenceNumber> = BTreeMap::new();
-        let mut latest: Vec<ObjectID> = Vec::new();
-
-        for kind in &input_object_kinds {
-            match kind {
-                InputObjectKind::ImmOrOwnedMoveObject(objref) => {
-                    versioned.insert(objref.0, objref.1);
-                }
-                InputObjectKind::SharedMoveObject { id, .. } => latest.push(*id),
-                InputObjectKind::MovePackage(id) => latest.push(*id),
-            }
-        }
-        for gas_ref in transaction.gas() {
-            versioned.entry(gas_ref.0).or_insert(gas_ref.1);
-        }
-        for objref in &receiving_object_refs {
-            versioned.entry(objref.0).or_insert(objref.1);
-        }
-
-        // An object shouldn't appear in both sets, but be safe.
-        for id in &latest {
-            versioned.remove(id);
-        }
-        latest.sort();
-        latest.dedup();
+        let (versioned, latest) = split_transaction_refs(transaction)?;
 
         // Fetch versioned objects at their exact versions.
         if !versioned.is_empty() {
