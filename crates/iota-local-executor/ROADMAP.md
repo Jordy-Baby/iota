@@ -52,10 +52,10 @@ Two executor types are provided:
 - [x] `RemoteStore` implements `BackingStore` (ObjectStore + BackingPackageStore + ChildObjectResolver)
 - [x] Pre-fetches input objects via batch `multi_get_object_with_options` RPC call
 - [x] On-demand fetching of dynamically loaded objects during execution (packages, child objects)
-- [x] `dev_inspect()` method — relaxed checks, suitable for exploration
-- [x] `dry_run()` method — strict checks, equivalent to node dry-run
+- [x] `simulate_transaction()` — unified dry-run / dev-inspect via `VmChecks` parameter
 - [x] Mock gas object creation when no gas is provided
 - [x] Automatic object version reconciliation (updates stale tx refs to match fetched versions)
+- [x] Configurable object fetch mode: exact transaction versions (default) or latest versions
 - [x] `OfflineExecutor` with `InMemoryStore` for fully offline execution (no network access)
 - [x] Example: pure function call (blake2b256) — no objects needed
 - [x] Example: staking transaction — shared + owned objects fetched from node
@@ -63,8 +63,7 @@ Two executor types are provided:
 
 ### TODO
 
-- [ ] **Object version handling**: The current RPC only fetches the latest version of an object. For strict dry-run with owned objects at specific versions, we may need `tryGetPastObject` or version-aware fetching.
-- [ ] **Shared object version resolution**: Shared objects require consensus-assigned versions. The local executor currently uses the latest version, which may differ from what the network would assign. Consider fetching the scheduled version or documenting this limitation.
+- [x] ~~**Object version handling**~~ Done.
 - [ ] **Caching and reuse**: Allow the `RemoteStore` to persist across multiple executions, so packages and immutable objects don't need to be re-fetched.
 - [ ] **GraphQL support**: Add an alternative `RemoteStore` backend that uses the GraphQL API instead of JSON-RPC, which may be more efficient for complex queries.
 - [ ] **Error reporting**: Improve error messages to clearly distinguish between local execution errors and remote fetch errors.
@@ -73,6 +72,6 @@ Two executor types are provided:
 - [ ] **Gas estimation**: Return gas cost estimates from the local execution.
 - [ ] **Event decoding**: Add helpers to decode Move events from the execution result.
 - [ ] **Multi-transaction support**: Support executing a sequence of transactions where later transactions see the state changes from earlier ones (useful for testing flows).
-- [x] ~~**Offline mode**: Support a fully offline mode where all objects are provided upfront (no network access needed).~~ Done via `OfflineExecutor`.
+- [x] ~~**Offline mode**~~ Done.
 - [ ] **Integration tests**: Add integration tests that run against a local test cluster.
 - [ ] **Benchmarks**: Compare local execution performance vs. remote dry-run to quantify the benefit.

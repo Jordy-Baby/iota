@@ -19,6 +19,6 @@ mod remote_store;
 
 pub use in_memory_store::InMemoryStore;
 pub use iota_types::transaction_executor::VmChecks;
-pub use local_executor::LocalExecutor;
+pub use local_executor::{LocalExecutor, ObjectFetchMode};
 pub use offline_executor::OfflineExecutor;
 pub use remote_store::RemoteStore;
