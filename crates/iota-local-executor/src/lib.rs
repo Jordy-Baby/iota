@@ -25,6 +25,6 @@ pub use caching_store::{GraphqlStore, GrpcStore, JsonRpcStore};
 pub use graphql_executor::GraphqlExecutor;
 pub use grpc_executor::GrpcExecutor;
 pub use in_memory_store::InMemoryStore;
-pub use iota_types::transaction_executor::VmChecks;
+pub use iota_types::{transaction::SenderSignedData, transaction_executor::VmChecks};
 pub use json_rpc_executor::{JsonRpcExecutor, ObjectFetchMode};
 pub use offline_executor::OfflineExecutor;

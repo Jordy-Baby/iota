@@ -10,7 +10,7 @@ use iota_graphql_rpc_client::simple_client::SimpleClient;
 use iota_protocol_config::ProtocolVersion;
 use iota_types::{
     object::Object,
-    transaction::TransactionData,
+    transaction::{SenderSignedData, TransactionData},
     transaction_executor::{SimulateTransactionResult, VmChecks},
 };
 
@@ -113,6 +113,24 @@ impl GraphqlExecutor {
         let store = GraphqlStore::new(GraphqlFetcher(self.client.clone()));
         self.prefetch_objects(&store, &transaction).await?;
         execution::simulate(&self.env, &store, transaction, checks)
+    }
+
+    /// Simulate a **signed** transaction locally, verifying signatures first.
+    ///
+    /// For standard schemes (Ed25519, Secp256k1, Secp256r1, MultiSig) the
+    /// full cryptographic check runs before execution. For
+    /// `MoveAuthenticator` signatures the sender address is checked upfront,
+    /// then the authenticator function is executed inside the Move VM — this
+    /// is the only way to fully validate `MoveAuthenticator` signatures.
+    pub async fn simulate_signed_transaction(
+        &self,
+        signed_data: SenderSignedData,
+        checks: VmChecks,
+    ) -> Result<SimulateTransactionResult> {
+        let store = GraphqlStore::new(GraphqlFetcher(self.client.clone()));
+        self.prefetch_objects(&store, signed_data.transaction_data())
+            .await?;
+        execution::simulate_signed(&self.env, &store, signed_data, checks)
     }
 
     /// Fetch all objects referenced by the transaction via GraphQL.

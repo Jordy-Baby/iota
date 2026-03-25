@@ -5,10 +5,32 @@
 //! simulation results across the different executor backends (JSON-RPC,
 //! gRPC) and against the node's own dry-run API.
 
+use std::{path::PathBuf, str::FromStr};
+
 use iota_json_rpc_types::IotaTransactionBlockEffectsAPI;
-use iota_local_executor::{GrpcExecutor, JsonRpcExecutor, ObjectFetchMode, VmChecks};
-use iota_test_transaction_builder::TestTransactionBuilder;
-use iota_types::{base_types::IotaAddress, effects::TransactionEffectsAPI, gas::GasCostSummary};
+use iota_keys::keystore::AccountKeystore;
+use iota_local_executor::{
+    GrpcExecutor, JsonRpcExecutor, ObjectFetchMode, SenderSignedData, VmChecks,
+};
+use iota_test_transaction_builder::{TestTransactionBuilder, publish_package};
+use iota_types::{
+    IOTA_FRAMEWORK_ADDRESS, TypeTag,
+    base_types::{IotaAddress, ObjectID, ObjectRef},
+    crypto::{AccountKeyPair, get_key_pair},
+    effects::TransactionEffectsAPI,
+    gas::GasCostSummary,
+    move_authenticator::MoveAuthenticator,
+    move_package,
+    object::Owner,
+    programmable_transaction_builder::ProgrammableTransactionBuilder,
+    signature::GenericSignature,
+    storage::WriteKind,
+    transaction::{
+        Argument, CallArg, ObjectArg, TEST_ONLY_GAS_UNIT_FOR_HEAVY_COMPUTATION_STORAGE,
+        Transaction, TransactionData,
+    },
+};
+use move_core_types::ident_str;
 use test_cluster::TestClusterBuilder;
 
 // ---------------------------------------------------------------------------
@@ -440,5 +462,394 @@ async fn compare_executors_staking_move_call() {
         local_result.effects.created().len(),
         grpc_result.effects.created().len(),
         "staking created count should match"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Signature verification tests
+// ---------------------------------------------------------------------------
+
+/// Simulate a signed transaction where a standard Ed25519 signature is valid.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn simulate_signed_transaction_valid_signature() {
+    let test_cluster = TestClusterBuilder::new()
+        .with_num_validators(1)
+        .build()
+        .await;
+
+    test_cluster.wait_for_checkpoint(1, None).await;
+
+    let (sender, gas) = test_cluster
+        .wallet
+        .get_one_gas_object()
+        .await
+        .unwrap()
+        .unwrap();
+    let rgp = test_cluster.get_reference_gas_price().await;
+    let recipient = IotaAddress::random_for_testing_only();
+
+    let tx_data = TestTransactionBuilder::new(sender, gas, rgp)
+        .transfer_iota(Some(1_000_000), recipient)
+        .build();
+
+    // Sign the transaction using the test cluster wallet.
+    let signed_tx: Transaction = test_cluster.sign_transaction(&tx_data);
+    let signed_data: SenderSignedData = signed_tx.into_data();
+
+    // Build executor and simulate with signature verification.
+    let rpc_url = test_cluster.rpc_url().to_string();
+    let iota_client = iota_sdk::IotaClientBuilder::default()
+        .build(&rpc_url)
+        .await
+        .unwrap();
+
+    let local = JsonRpcExecutor::new(iota_client).await.unwrap();
+
+    let result = local
+        .simulate_signed_transaction(signed_data, VmChecks::Enabled)
+        .await
+        .expect("simulate_signed_transaction with valid signature should succeed");
+
+    assert!(
+        result.effects.status().is_ok(),
+        "signed transaction execution should succeed: {:?}",
+        result.effects.status()
+    );
+}
+
+/// Simulate a signed transaction where the signature does NOT match the sender.
+/// Signature verification should fail before execution begins.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn simulate_signed_transaction_invalid_signature() {
+    let test_cluster = TestClusterBuilder::new()
+        .with_num_validators(1)
+        .build()
+        .await;
+
+    test_cluster.wait_for_checkpoint(1, None).await;
+
+    let (sender, gas) = test_cluster
+        .wallet
+        .get_one_gas_object()
+        .await
+        .unwrap()
+        .unwrap();
+    let rgp = test_cluster.get_reference_gas_price().await;
+    let recipient = IotaAddress::random_for_testing_only();
+
+    let tx_data = TestTransactionBuilder::new(sender, gas, rgp)
+        .transfer_iota(Some(1_000_000), recipient)
+        .build();
+
+    // Sign with a completely different key that does NOT correspond to the sender.
+    let (_wrong_address, wrong_key): (IotaAddress, AccountKeyPair) = get_key_pair();
+    let bad_signed_tx = Transaction::from_data_and_signer(tx_data, vec![&wrong_key]);
+    let bad_signed_data: SenderSignedData = bad_signed_tx.into_data();
+
+    // Build executor and attempt simulation.
+    let rpc_url = test_cluster.rpc_url().to_string();
+    let iota_client = iota_sdk::IotaClientBuilder::default()
+        .build(&rpc_url)
+        .await
+        .unwrap();
+
+    let local = JsonRpcExecutor::new(iota_client).await.unwrap();
+
+    let result = local
+        .simulate_signed_transaction(bad_signed_data, VmChecks::Enabled)
+        .await;
+
+    let err_msg = result
+        .err()
+        .expect("simulate_signed_transaction with invalid signature should fail")
+        .to_string();
+    assert!(
+        err_msg.contains("signature verification failed"),
+        "error should mention signature verification, got: {err_msg}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// MoveAuthenticator signature verification tests
+// ---------------------------------------------------------------------------
+
+// Path to the abstract_account Move package (relative to e2e-tests crate).
+const AA_PACKAGE_PATH: &str = "../iota-e2e-tests/tests/abstract_account/abstract_account";
+const AA_MODULE_NAME: &str = "abstract_account";
+const AA_ACCOUNT_NAME: &str = "AbstractAccount";
+const AA_CREATE_MODULE_NAME: &str = "abstract_account_keyed";
+const AA_AUTHENTICATE_MODULE_NAME: &str = "abstract_account_keyed";
+
+/// Publish the abstract account Move package and return its ID and metadata
+/// ref.
+async fn publish_aa_package(test_cluster: &mut test_cluster::TestCluster) -> (ObjectID, ObjectRef) {
+    let path: PathBuf = [env!("CARGO_MANIFEST_DIR"), AA_PACKAGE_PATH]
+        .iter()
+        .collect();
+    let aa_package_id = publish_package(test_cluster.wallet(), path).await.0;
+    let aa_metadata_id = move_package::derive_package_metadata_id(aa_package_id);
+    let aa_metadata_ref = test_cluster.get_latest_object_ref(&aa_metadata_id).await;
+    (aa_package_id, aa_metadata_ref)
+}
+
+/// Create an abstract account on-chain and return its ObjectRef.
+async fn create_abstract_account(
+    test_cluster: &test_cluster::TestCluster,
+    owner: IotaAddress,
+    aa_package_id: ObjectID,
+    aa_metadata_ref: ObjectRef,
+    authenticate_fn_name: &str,
+) -> ObjectRef {
+    let owner_pk = test_cluster
+        .wallet
+        .config()
+        .keystore()
+        .get_key(&owner)
+        .unwrap()
+        .public();
+
+    let pt = {
+        let mut builder = ProgrammableTransactionBuilder::new();
+        let arguments = vec![
+            builder
+                .obj(ObjectArg::ImmOrOwnedObject(aa_metadata_ref))
+                .unwrap(),
+            builder.pure(AA_AUTHENTICATE_MODULE_NAME).unwrap(),
+            builder.pure(authenticate_fn_name).unwrap(),
+        ];
+        if let Argument::Result(auth_fn_ref) = builder.programmable_move_call(
+            IOTA_FRAMEWORK_ADDRESS.into(),
+            ident_str!("authenticator_function").to_owned(),
+            ident_str!("create_auth_function_ref_v1").to_owned(),
+            vec![
+                TypeTag::from_str(&format!(
+                    "{aa_package_id}::{AA_MODULE_NAME}::{AA_ACCOUNT_NAME}"
+                ))
+                .unwrap(),
+            ],
+            arguments,
+        ) {
+            let arguments = vec![
+                builder.pure(owner_pk.as_ref()).unwrap(),
+                Argument::Result(auth_fn_ref),
+            ];
+            builder.programmable_move_call(
+                aa_package_id,
+                ident_str!(AA_CREATE_MODULE_NAME).to_owned(),
+                ident_str!("create").to_owned(),
+                vec![],
+                arguments,
+            );
+        }
+        builder.finish()
+    };
+
+    let tx_data = test_cluster
+        .test_transaction_builder()
+        .await
+        .programmable(pt)
+        .build();
+    let tx = test_cluster.wallet.sign_transaction(&tx_data);
+    let (effects, _) = test_cluster
+        .execute_transaction_return_raw_effects(tx)
+        .await
+        .expect("create abstract account should succeed");
+
+    // The created shared object is the abstract account.
+    effects
+        .all_changed_objects()
+        .iter()
+        .find_map(|change| match change {
+            (objref, Owner::Shared { .. }, WriteKind::Create) => Some(*objref),
+            _ => None,
+        })
+        .expect("expected a created shared object (the abstract account)")
+}
+
+/// Build a simple PTB that calls `add_field` on the abstract account.
+fn craft_aa_simple_ptb(
+    aa_ref: ObjectRef,
+    aa_package_id: ObjectID,
+) -> iota_types::transaction::ProgrammableTransaction {
+    let mut builder = ProgrammableTransactionBuilder::new();
+    let arguments = vec![
+        builder
+            .obj(ObjectArg::SharedObject {
+                id: aa_ref.0,
+                initial_shared_version: aa_ref.1,
+                mutable: true,
+            })
+            .unwrap(),
+        builder.pure(1_u8).unwrap(),
+        builder.pure(2_u8).unwrap(),
+    ];
+    builder.programmable_move_call(
+        aa_package_id,
+        ident_str!(AA_MODULE_NAME).to_owned(),
+        ident_str!("add_field").to_owned(),
+        vec![TypeTag::U8, TypeTag::U8],
+        arguments,
+    );
+    builder.finish()
+}
+
+/// Simulate a transaction signed with a MoveAuthenticator (free_access
+/// variant). The authenticator logic runs in the Move VM during execution —
+/// this is the only way to fully verify MoveAuthenticator signatures.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn simulate_signed_transaction_move_authenticator_valid() {
+    let mut test_cluster = TestClusterBuilder::new()
+        .with_num_validators(1)
+        .build()
+        .await;
+
+    test_cluster.wait_for_checkpoint(1, None).await;
+
+    // 1. Publish the abstract account package and create an AA.
+    let (aa_package_id, aa_metadata_ref) = publish_aa_package(&mut test_cluster).await;
+    let owner = test_cluster.wallet.get_addresses()[0];
+    let aa_ref = create_abstract_account(
+        &test_cluster,
+        owner,
+        aa_package_id,
+        aa_metadata_ref,
+        "authenticate_free_access",
+    )
+    .await;
+
+    // 2. Fund the abstract account address so it can pay for gas.
+    let aa_sender: IotaAddress = aa_ref.0.into();
+    let rgp = test_cluster.get_reference_gas_price().await;
+    let aa_gas = test_cluster
+        .fund_address_and_return_gas(rgp, Some(20_000_000_000), aa_sender)
+        .await;
+
+    // 3. Build a transaction from the AA sender.
+    let pt = craft_aa_simple_ptb(aa_ref, aa_package_id);
+    let gas_price = test_cluster.get_reference_gas_price().await;
+    let tx_data = TransactionData::new_programmable_allow_sponsor(
+        aa_sender,
+        vec![aa_gas],
+        pt,
+        gas_price * TEST_ONLY_GAS_UNIT_FOR_HEAVY_COMPUTATION_STORAGE,
+        gas_price,
+        aa_sender,
+    );
+
+    // 4. Create a MoveAuthenticator (free_access — no extra args needed).
+    let self_call_arg = CallArg::Object(ObjectArg::SharedObject {
+        id: aa_ref.0,
+        initial_shared_version: aa_ref.1,
+        mutable: false,
+    });
+    let move_auth = GenericSignature::MoveAuthenticator(MoveAuthenticator::new_v1(
+        vec![],
+        vec![],
+        self_call_arg,
+    ));
+    let signed_data = SenderSignedData::new(tx_data, vec![move_auth]);
+
+    // 5. Simulate via local executor with signature verification.
+    let rpc_url = test_cluster.rpc_url().to_string();
+    let iota_client = iota_sdk::IotaClientBuilder::default()
+        .build(&rpc_url)
+        .await
+        .unwrap();
+
+    let local = JsonRpcExecutor::new(iota_client).await.unwrap();
+    let result = local
+        .simulate_signed_transaction(signed_data, VmChecks::Disabled)
+        .await
+        .expect("MoveAuthenticator simulate_signed_transaction should succeed");
+
+    assert!(
+        result.effects.status().is_ok(),
+        "MoveAuthenticator transaction should succeed: {:?}",
+        result.effects.status()
+    );
+}
+
+/// Simulate a transaction with a MoveAuthenticator using the Ed25519 variant,
+/// but provide a bogus signature. The sender address matches (so pre-execution
+/// checks pass), but the Move authenticator function rejects the invalid
+/// signature during VM execution.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn simulate_signed_transaction_move_authenticator_invalid_args() {
+    let mut test_cluster = TestClusterBuilder::new()
+        .with_num_validators(1)
+        .build()
+        .await;
+
+    test_cluster.wait_for_checkpoint(1, None).await;
+
+    // 1. Publish the abstract account package and create an AA with Ed25519 auth.
+    let (aa_package_id, aa_metadata_ref) = publish_aa_package(&mut test_cluster).await;
+    let owner = test_cluster.wallet.get_addresses()[0];
+    let aa_ref = create_abstract_account(
+        &test_cluster,
+        owner,
+        aa_package_id,
+        aa_metadata_ref,
+        "authenticate_ed25519",
+    )
+    .await;
+
+    // 2. Fund the abstract account address so it can pay for gas.
+    let aa_sender: IotaAddress = aa_ref.0.into();
+    let rgp = test_cluster.get_reference_gas_price().await;
+    let aa_gas = test_cluster
+        .fund_address_and_return_gas(rgp, Some(20_000_000_000), aa_sender)
+        .await;
+
+    // 3. Build a transaction from the AA sender.
+    let pt = craft_aa_simple_ptb(aa_ref, aa_package_id);
+    let gas_price = test_cluster.get_reference_gas_price().await;
+    let tx_data = TransactionData::new_programmable_allow_sponsor(
+        aa_sender,
+        vec![aa_gas],
+        pt,
+        gas_price * TEST_ONLY_GAS_UNIT_FOR_HEAVY_COMPUTATION_STORAGE,
+        gas_price,
+        aa_sender,
+    );
+
+    // 4. Create a MoveAuthenticator with a bogus Ed25519 signature. The sender
+    //    address matches, so pre-execution checks pass. But the Move
+    //    authenticate_ed25519 function will abort because the signature doesn't
+    //    verify against the stored public key.
+    let self_call_arg = CallArg::Object(ObjectArg::SharedObject {
+        id: aa_ref.0,
+        initial_shared_version: aa_ref.1,
+        mutable: false,
+    });
+    // 64 hex chars of zeros = 32 bytes of zeros, which is an invalid Ed25519 sig.
+    let bogus_sig_hex = "00".repeat(64);
+    let signature_call_arg = CallArg::Pure(bcs::to_bytes(&bogus_sig_hex).unwrap());
+    let move_auth = GenericSignature::MoveAuthenticator(MoveAuthenticator::new_v1(
+        vec![signature_call_arg],
+        vec![],
+        self_call_arg,
+    ));
+    let signed_data = SenderSignedData::new(tx_data, vec![move_auth]);
+
+    // 5. Simulate via local executor.
+    let rpc_url = test_cluster.rpc_url().to_string();
+    let iota_client = iota_sdk::IotaClientBuilder::default()
+        .build(&rpc_url)
+        .await
+        .unwrap();
+
+    let local = JsonRpcExecutor::new(iota_client).await.unwrap();
+    let result = local
+        .simulate_signed_transaction(signed_data, VmChecks::Disabled)
+        .await
+        .expect("should return effects even on auth failure");
+
+    // The authenticator function should have aborted — the effects should
+    // indicate execution failure.
+    assert!(
+        result.effects.status().is_err(),
+        "MoveAuthenticator with bogus signature should fail during VM execution: {:?}",
+        result.effects.status()
     );
 }

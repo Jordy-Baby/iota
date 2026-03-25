@@ -36,6 +36,7 @@ serde_json.workspace = true
 
 [dev-dependencies]
 iota-framework.workspace = true
+iota-keys.workspace = true
 iota-macros.workspace = true
 iota-test-transaction-builder.workspace = true
 test-cluster.workspace = true

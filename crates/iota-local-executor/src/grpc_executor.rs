@@ -10,7 +10,7 @@ use iota_protocol_config::ProtocolVersion;
 use iota_sdk_types::ObjectId;
 use iota_types::{
     object::Object,
-    transaction::TransactionData,
+    transaction::{SenderSignedData, TransactionData},
     transaction_executor::{SimulateTransactionResult, VmChecks},
 };
 
@@ -37,7 +37,8 @@ impl GrpcExecutor {
                 Some("epoch,reference_gas_price,start,protocol_config.protocol_version"),
             )
             .await
-            .map_err(|e| anyhow::anyhow!("failed to fetch epoch info: {e}"))?;
+            .map_err(|e| anyhow::anyhow!("failed to fetch epoch info: {e}"))?
+            .into_inner();
 
         let epoch_id = epoch
             .epoch_id()
@@ -90,6 +91,24 @@ impl GrpcExecutor {
         let store = GrpcStore::new(GrpcFetcher(self.client.clone()));
         self.prefetch_objects(&store, &transaction).await?;
         execution::simulate(&self.env, &store, transaction, checks)
+    }
+
+    /// Simulate a **signed** transaction locally, verifying signatures first.
+    ///
+    /// For standard schemes (Ed25519, Secp256k1, Secp256r1, MultiSig) the
+    /// full cryptographic check runs before execution. For
+    /// `MoveAuthenticator` signatures the sender address is checked upfront,
+    /// then the authenticator function is executed inside the Move VM — this
+    /// is the only way to fully validate `MoveAuthenticator` signatures.
+    pub async fn simulate_signed_transaction(
+        &self,
+        signed_data: SenderSignedData,
+        checks: VmChecks,
+    ) -> Result<SimulateTransactionResult> {
+        let store = GrpcStore::new(GrpcFetcher(self.client.clone()));
+        self.prefetch_objects(&store, signed_data.transaction_data())
+            .await?;
+        execution::simulate_signed(&self.env, &store, signed_data, checks)
     }
 
     /// Fetch all objects referenced by the transaction via gRPC.
@@ -161,7 +180,8 @@ impl GrpcExecutor {
             .client
             .get_objects(refs, None)
             .await
-            .map_err(|e| anyhow::anyhow!("failed to fetch objects via gRPC: {e}"))?;
+            .map_err(|e| anyhow::anyhow!("failed to fetch objects via gRPC: {e}"))?
+            .into_inner();
 
         for proto_obj in proto_objects {
             let sdk_obj = proto_obj

@@ -6729,6 +6729,7 @@ dependencies = [
  "iota-grpc-types",
  "iota-json-rpc-api",
  "iota-json-rpc-types",
+ "iota-keys",
  "iota-macros",
  "iota-protocol-config",
  "iota-sdk",

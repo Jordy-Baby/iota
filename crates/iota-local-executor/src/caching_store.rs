@@ -204,8 +204,8 @@ impl ObjectFetcher for GrpcFetcher {
         });
 
         match result {
-            Ok(objects) => {
-                for proto_obj in objects {
+            Ok(envelope) => {
+                for proto_obj in envelope.into_inner() {
                     match proto_obj.object() {
                         Ok(sdk_obj) => match Object::try_from(sdk_obj) {
                             Ok(obj) => return Some(obj),
