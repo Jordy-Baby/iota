@@ -2202,6 +2202,7 @@ impl AuthorityState {
             signer,
             transaction.digest(),
             checks.disabled(),
+            &mut None,
         );
 
         // In the case of a dev inspect, the execution_result could be filled with some
@@ -2406,6 +2407,7 @@ impl AuthorityState {
             sender,
             transaction_digest,
             skip_checks,
+            &mut None,
         );
 
         let raw_effects = if show_raw_txn_data_and_effects {

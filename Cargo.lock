@@ -6738,6 +6738,7 @@ dependencies = [
  "iota-transaction-checks",
  "iota-types",
  "move-core-types",
+ "move-trace-format",
  "prometheus",
  "serde_json",
  "test-cluster",

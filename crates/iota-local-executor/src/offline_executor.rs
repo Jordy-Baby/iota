@@ -11,7 +11,7 @@ use iota_types::{
 };
 
 use crate::{
-    InMemoryStore,
+    DebugConfig, DebugSimulateResult, InMemoryStore,
     execution::{self, ExecutionEnv},
 };
 
@@ -51,11 +51,34 @@ impl OfflineExecutor {
         epoch_timestamp_ms: u64,
         store: InMemoryStore,
     ) -> Result<Self> {
-        let env = ExecutionEnv::new(
+        Self::with_debug(
             protocol_version,
             reference_gas_price,
             epoch_id,
             epoch_timestamp_ms,
+            store,
+            DebugConfig::default(),
+        )
+    }
+
+    /// Create a new fully offline executor with a custom [`DebugConfig`] that
+    /// enables debug-print capture, gas profiling, and/or execution tracing.
+    ///
+    /// See `docs/LOCAL_DEBUGGING.md` for the full workflow.
+    pub fn with_debug(
+        protocol_version: ProtocolVersion,
+        reference_gas_price: u64,
+        epoch_id: u64,
+        epoch_timestamp_ms: u64,
+        store: InMemoryStore,
+        debug_config: DebugConfig,
+    ) -> Result<Self> {
+        let env = ExecutionEnv::with_debug(
+            protocol_version,
+            reference_gas_price,
+            epoch_id,
+            epoch_timestamp_ms,
+            debug_config,
         )?;
         Ok(Self { env, store })
     }
@@ -79,6 +102,17 @@ impl OfflineExecutor {
         execution::simulate(&self.env, &self.store, transaction, checks)
     }
 
+    /// Simulate a transaction and return the captured [`DebugArtifacts`]
+    /// alongside the result. With a default [`DebugConfig`] the artifacts are
+    /// empty and this is equivalent to [`Self::simulate_transaction`].
+    pub fn simulate_transaction_with_debug(
+        &self,
+        transaction: TransactionData,
+        checks: VmChecks,
+    ) -> Result<DebugSimulateResult> {
+        execution::simulate_with_debug(&self.env, &self.store, transaction, checks)
+    }
+
     /// Simulate a **signed** transaction offline, verifying signatures first.
     ///
     /// For standard schemes (Ed25519, Secp256k1, Secp256r1, MultiSig) the
@@ -92,5 +126,14 @@ impl OfflineExecutor {
         checks: VmChecks,
     ) -> Result<SimulateTransactionResult> {
         execution::simulate_signed(&self.env, &self.store, signed_data, checks)
+    }
+
+    /// Signed-transaction variant of [`Self::simulate_transaction_with_debug`].
+    pub fn simulate_signed_transaction_with_debug(
+        &self,
+        signed_data: SenderSignedData,
+        checks: VmChecks,
+    ) -> Result<DebugSimulateResult> {
+        execution::simulate_signed_with_debug(&self.env, &self.store, signed_data, checks)
     }
 }

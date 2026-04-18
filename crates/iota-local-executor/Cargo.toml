@@ -19,7 +19,10 @@ tracing.workspace = true
 
 # internal dependencies
 iota-config.workspace = true
-iota-execution.workspace = true
+# `tracing` feature wires up the Move VM's gas profiler and instruction-level
+# trace builder — this crate's whole purpose is local debugging, so it is
+# enabled unconditionally.
+iota-execution = { workspace = true, features = ["tracing"] }
 iota-graphql-rpc-client.workspace = true
 iota-graphql-rpc-headers.workspace = true
 iota-grpc-client.workspace = true
@@ -32,6 +35,7 @@ iota-sdk-types.workspace = true
 iota-transaction-checks.workspace = true
 iota-types.workspace = true
 move-core-types.workspace = true
+move-trace-format.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]

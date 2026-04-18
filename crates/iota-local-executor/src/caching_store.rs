@@ -52,6 +52,10 @@ pub trait ObjectFetcher: Send + Sync {
 pub struct CachingStore<F> {
     fetcher: F,
     objects: RwLock<BTreeMap<ObjectID, Object>>,
+    /// Package overrides checked before any remote fetch. Used by
+    /// `LocalPackage` to expose locally-compiled Move packages under a
+    /// synthetic [`ObjectID`] without publishing them on-chain.
+    package_overrides: RwLock<BTreeMap<ObjectID, Object>>,
 }
 
 impl<F> CachingStore<F> {
@@ -59,6 +63,7 @@ impl<F> CachingStore<F> {
         Self {
             fetcher,
             objects: RwLock::new(BTreeMap::new()),
+            package_overrides: RwLock::new(BTreeMap::new()),
         }
     }
 
@@ -70,15 +75,42 @@ impl<F> CachingStore<F> {
             .insert(object.id(), object);
     }
 
+    /// Install a local package under a synthetic [`ObjectID`]. Future
+    /// `BackingPackageStore::get_package_object` and `ObjectStore` reads for
+    /// this ID return the override instead of hitting the remote fetcher.
+    ///
+    /// The supplied `package_object` must wrap a `MovePackage` (not a Move
+    /// object) — this is what `LocalPackage::install_into_caching` produces.
+    pub fn insert_package_override(&self, package_object: Object) {
+        self.package_overrides
+            .write()
+            .expect("lock poisoned")
+            .insert(package_object.id(), package_object);
+    }
+
     /// Get a cached object by ID (cache-only, no fetch).
     pub fn get_cached(&self, id: &ObjectID) -> Option<Object> {
         self.objects.read().expect("lock poisoned").get(id).cloned()
     }
+
+    /// Look up a package override without touching the object cache or remote
+    /// fetcher.
+    fn get_package_override(&self, id: &ObjectID) -> Option<Object> {
+        self.package_overrides
+            .read()
+            .expect("lock poisoned")
+            .get(id)
+            .cloned()
+    }
 }
 
 impl<F: ObjectFetcher> CachingStore<F> {
-    /// Get an object by ID, fetching from the remote if not cached.
+    /// Get an object by ID, fetching from the remote if not cached. Package
+    /// overrides shadow both the cache and the remote fetch.
     fn get_or_fetch(&self, id: &ObjectID) -> Option<Object> {
+        if let Some(obj) = self.get_package_override(id) {
+            return Some(obj);
+        }
         if let Some(obj) = self.get_cached(id) {
             return Some(obj);
         }

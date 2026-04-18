@@ -14,6 +14,7 @@
 //! - [`OfflineExecutor`]: Uses only pre-provided objects, no network access.
 
 mod caching_store;
+mod debug;
 mod execution;
 mod graphql_executor;
 mod grpc_executor;
@@ -22,6 +23,7 @@ mod json_rpc_executor;
 mod offline_executor;
 
 pub use caching_store::{GraphqlStore, GrpcStore, JsonRpcStore};
+pub use debug::{DebugArtifacts, DebugConfig, DebugSimulateResult, ProfileOutput, ProfileSink};
 pub use graphql_executor::GraphqlExecutor;
 pub use grpc_executor::GrpcExecutor;
 pub use in_memory_store::InMemoryStore;

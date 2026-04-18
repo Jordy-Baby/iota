@@ -5,6 +5,7 @@
 
 use std::{
     collections::{BTreeMap, HashSet},
+    path::PathBuf,
     sync::Arc,
 };
 
@@ -14,6 +15,7 @@ use iota_config::{
 };
 use iota_execution::Executor;
 use iota_protocol_config::{Chain, ProtocolConfig, ProtocolVersion};
+use move_trace_format::format::MoveTraceBuilder;
 use iota_types::{
     account_abstraction::{
         account::AuthenticatorFunctionRefV1Key,
@@ -41,6 +43,8 @@ use iota_types::{
     transaction_executor::{SimulateTransactionResult, VmChecks},
 };
 
+use crate::debug::{DebugArtifacts, DebugConfig, DebugSimulateResult, ProfileOutput, ProfileSink};
+
 /// Configuration for a local execution environment.
 pub(crate) struct ExecutionEnv {
     pub(crate) protocol_config: ProtocolConfig,
@@ -50,6 +54,11 @@ pub(crate) struct ExecutionEnv {
     executor: Arc<dyn Executor + Send + Sync>,
     limits_metrics: Arc<LimitsMetrics>,
     bytecode_verifier_metrics: Arc<BytecodeVerifierMetrics>,
+    debug_config: DebugConfig,
+    /// For `ProfileSink::Capture`: a dedicated temp directory the VM profiler
+    /// writes into; after execution we scan it for the generated JSON file.
+    /// `None` when `debug_config.profile` is `None` or `ProfileSink::File`.
+    capture_profile_dir: Option<PathBuf>,
 }
 
 impl ExecutionEnv {
@@ -59,11 +68,43 @@ impl ExecutionEnv {
         epoch_id: u64,
         epoch_timestamp_ms: u64,
     ) -> Result<Self> {
+        Self::with_debug(
+            protocol_version,
+            reference_gas_price,
+            epoch_id,
+            epoch_timestamp_ms,
+            DebugConfig::default(),
+        )
+    }
+
+    pub(crate) fn with_debug(
+        protocol_version: ProtocolVersion,
+        reference_gas_price: u64,
+        epoch_id: u64,
+        epoch_timestamp_ms: u64,
+        debug_config: DebugConfig,
+    ) -> Result<Self> {
         let protocol_config = ProtocolConfig::get_for_version(protocol_version, Chain::Unknown);
         let registry = prometheus::Registry::new();
         let limits_metrics = Arc::new(LimitsMetrics::new(&registry));
         let bytecode_verifier_metrics = Arc::new(BytecodeVerifierMetrics::new(&registry));
-        let executor = iota_execution::executor(&protocol_config, true, None)?;
+
+        // Resolve the profile path. `File` forwards the caller's path directly.
+        // `Capture` puts the profiler into a dedicated temp directory — the VM
+        // writes `<our-path>_<frame-name>_<timestamp>.<ext>` rather than the exact
+        // path, so we scan the directory afterwards instead of guessing the name.
+        let (profile_path, capture_profile_dir) = match &debug_config.profile {
+            Some(ProfileSink::File(p)) => (Some(p.clone()), None),
+            Some(ProfileSink::Capture) => {
+                let dir = profile_capture_dir();
+                std::fs::create_dir_all(&dir)?;
+                (Some(dir.join("profile.json")), Some(dir))
+            }
+            None => (None, None),
+        };
+
+        let silent = !debug_config.capture_debug_prints;
+        let executor = iota_execution::executor(&protocol_config, silent, profile_path)?;
 
         Ok(Self {
             protocol_config,
@@ -73,8 +114,68 @@ impl ExecutionEnv {
             executor,
             limits_metrics,
             bytecode_verifier_metrics,
+            debug_config,
+            capture_profile_dir,
         })
     }
+
+    pub(crate) fn trace_enabled(&self) -> bool {
+        self.debug_config.trace
+    }
+
+    /// Materialise the captured artifacts for the current run: read the
+    /// profile JSON back from disk if the sink was [`ProfileSink::Capture`],
+    /// and attach the finished trace if one was requested.
+    fn collect_artifacts(&self, trace_builder: Option<MoveTraceBuilder>) -> DebugArtifacts {
+        let profile = match (&self.debug_config.profile, &self.capture_profile_dir) {
+            (Some(ProfileSink::File(p)), _) => Some(ProfileOutput::Path(p.clone())),
+            (Some(ProfileSink::Capture), Some(dir)) => read_first_json_in_dir(dir),
+            _ => None,
+        };
+
+        DebugArtifacts {
+            debug_prints: Vec::new(), // Phase 2 populates this.
+            profile,
+            trace: trace_builder.map(|b| b.into_trace()),
+        }
+    }
+}
+
+impl Drop for ExecutionEnv {
+    fn drop(&mut self) {
+        if let Some(dir) = self.capture_profile_dir.take() {
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+    }
+}
+
+/// Allocate a unique temp directory for captured gas-profile output. The VM
+/// profiler writes `<path>_<frame-name>_<timestamp>.<ext>` into this dir, and
+/// we scan it back after execution.
+fn profile_capture_dir() -> PathBuf {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
+    std::env::temp_dir().join(format!("iota-local-executor-gas-profile-{pid}-{n}"))
+}
+
+/// Return the first JSON file in `dir` as [`ProfileOutput::Json`], or `None`
+/// if the directory is empty or unreadable.
+fn read_first_json_in_dir(dir: &std::path::Path) -> Option<ProfileOutput> {
+    let entries = std::fs::read_dir(dir).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) == Some("json") {
+            match std::fs::read(&path) {
+                Ok(bytes) => return Some(ProfileOutput::Json(bytes)),
+                Err(e) => {
+                    tracing::warn!("Failed to read captured gas profile at {path:?}: {e}");
+                }
+            }
+        }
+    }
+    None
 }
 
 /// Run a transaction against the given store: validate, resolve objects, and
@@ -88,8 +189,24 @@ pub(crate) fn simulate(
     transaction: TransactionData,
     checks: VmChecks,
 ) -> Result<SimulateTransactionResult> {
+    simulate_with_debug(env, store, transaction, checks).map(|d| d.result)
+}
+
+/// Run a transaction and return the captured debug artifacts alongside the
+/// result. Artifact population is controlled by the [`DebugConfig`] stored on
+/// the [`ExecutionEnv`] — with a default config this behaves like [`simulate`]
+/// plus an empty [`DebugArtifacts`].
+pub(crate) fn simulate_with_debug(
+    env: &ExecutionEnv,
+    store: &dyn BackingStore,
+    transaction: TransactionData,
+    checks: VmChecks,
+) -> Result<DebugSimulateResult> {
     let prepared = prepare_transaction(env, store, transaction, checks, 0)?;
-    execute_prepared(env, store, prepared, checks)
+    let mut trace_builder = env.trace_enabled().then(MoveTraceBuilder::new);
+    let result = execute_prepared(env, store, prepared, checks, &mut trace_builder)?;
+    let artifacts = env.collect_artifacts(trace_builder);
+    Ok(DebugSimulateResult { result, artifacts })
 }
 
 /// Run a **signed** transaction: verify signatures first, then simulate.
@@ -110,6 +227,16 @@ pub(crate) fn simulate_signed(
     signed_data: SenderSignedData,
     checks: VmChecks,
 ) -> Result<SimulateTransactionResult> {
+    simulate_signed_with_debug(env, store, signed_data, checks).map(|d| d.result)
+}
+
+/// Signed-transaction variant of [`simulate_with_debug`].
+pub(crate) fn simulate_signed_with_debug(
+    env: &ExecutionEnv,
+    store: &dyn BackingStore,
+    signed_data: SenderSignedData,
+    checks: VmChecks,
+) -> Result<DebugSimulateResult> {
     let verify_params = VerifyParams::default();
     let zklogin_inputs_cache = Arc::new(VerifiedDigestCache::new_empty());
 
@@ -130,11 +257,20 @@ pub(crate) fn simulate_signed(
     };
 
     let prepared = prepare_transaction(env, store, transaction, checks, authenticator_gas_budget)?;
+    let mut trace_builder = env.trace_enabled().then(MoveTraceBuilder::new);
 
-    match move_authenticator {
-        Some(authenticator) => execute_with_move_authenticator(env, store, prepared, authenticator),
-        None => execute_prepared(env, store, prepared, checks),
-    }
+    let result = match move_authenticator {
+        Some(authenticator) => execute_with_move_authenticator(
+            env,
+            store,
+            prepared,
+            authenticator,
+            &mut trace_builder,
+        ),
+        None => execute_prepared(env, store, prepared, checks, &mut trace_builder),
+    }?;
+    let artifacts = env.collect_artifacts(trace_builder);
+    Ok(DebugSimulateResult { result, artifacts })
 }
 
 // ---------------------------------------------------------------------------
@@ -255,6 +391,7 @@ fn execute_prepared(
     store: &dyn BackingStore,
     prepared: PreparedTransaction,
     checks: VmChecks,
+    trace_builder_opt: &mut Option<MoveTraceBuilder>,
 ) -> Result<SimulateTransactionResult> {
     let PreparedTransaction {
         transaction,
@@ -279,6 +416,7 @@ fn execute_prepared(
         signer,
         transaction.digest(),
         checks.disabled(),
+        trace_builder_opt,
     );
 
     Ok(SimulateTransactionResult {
@@ -303,6 +441,7 @@ fn execute_with_move_authenticator(
     store: &dyn BackingStore,
     prepared: PreparedTransaction,
     authenticator: MoveAuthenticator,
+    trace_builder_opt: &mut Option<MoveTraceBuilder>,
 ) -> Result<SimulateTransactionResult> {
     let PreparedTransaction {
         transaction,
@@ -328,6 +467,10 @@ fn execute_with_move_authenticator(
     // Load the AuthenticatorFunctionRefV1 from the account object's dynamic field.
     let authenticator_fn_ref = resolve_authenticator_function_ref(store, &authenticator)?;
 
+    // BCS-serialize the transaction data for the auth context.
+    let tx_data_bytes =
+        bcs::to_bytes(&transaction).expect("TransactionData serialization cannot fail");
+
     // Execute with authenticator.
     let (kind, signer, gas_data) = transaction.execution_parts();
     let (inner_temp_store, _, effects, execution_result) = env
@@ -342,14 +485,13 @@ fn execute_with_move_authenticator(
             env.epoch_timestamp_ms,
             gas_data,
             gas_status,
-            authenticator,
-            authenticator_fn_ref,
-            auth_checked,
+            vec![(authenticator, authenticator_fn_ref, auth_checked)],
             union_checked,
             kind,
             signer,
             transaction.digest(),
-            &mut None,
+            tx_data_bytes,
+            trace_builder_opt,
         );
 
     Ok(SimulateTransactionResult {

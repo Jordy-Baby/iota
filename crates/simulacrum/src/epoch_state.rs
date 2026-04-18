@@ -271,6 +271,7 @@ impl EpochState {
                 signer,
                 transaction.digest(),
                 checks.disabled(),
+                &mut None,
             );
 
         Ok(SimulateTransactionResult {

@@ -76,6 +76,8 @@ pub trait Executor {
         transaction_signer: IotaAddress,
         transaction_digest: TransactionDigest,
         skip_all_checks: bool,
+        // Tracing
+        trace_builder_opt: &mut Option<MoveTraceBuilder>,
     ) -> (
         InnerTemporaryStore,
         IotaGasStatus,
