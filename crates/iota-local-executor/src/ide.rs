@@ -172,8 +172,8 @@ fn lookup_source_span(
         let location = fn_map.definition_location;
         return Some(SourceSpan {
             file_hash: location.file_hash().0,
-            start_byte: location.start() as u32,
-            end_byte: location.end() as u32,
+            start_byte: location.start(),
+            end_byte: location.end(),
         });
     }
     None

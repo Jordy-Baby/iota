@@ -105,6 +105,7 @@ members = [
   "crates/iota-ledger",
   "crates/iota-ledger-signer",
   "crates/iota-light-client",
+  "crates/iota-local-exec",
   "crates/iota-local-executor",
   "crates/iota-localnet",
   "crates/iota-macros",

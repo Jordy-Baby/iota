@@ -1,0 +1,28 @@
+[package]
+name = "iota-local-exec"
+version.workspace = true
+authors = ["IOTA Foundation <info@iota.org>"]
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+description = "CLI for iota-local-executor: compile local Move packages, run a PTB, dump artifacts"
+
+[dependencies]
+anyhow.workspace = true
+bcs.workspace = true
+clap = { workspace = true, features = ["derive"] }
+iota-framework.workspace = true
+iota-local-executor.workspace = true
+iota-protocol-config.workspace = true
+iota-types.workspace = true
+move-binary-format.workspace = true
+move-core-types.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[[bin]]
+name = "iota-local-exec"
+path = "src/main.rs"

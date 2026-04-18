@@ -51,7 +51,7 @@ pub fn apply_effects_to_in_memory(store: &mut InMemoryStore, result: &SimulateTr
     // Write all created and mutated objects back. Insertion also covers
     // `unwrapped` objects — they are present in `output_objects` with their
     // new owner.
-    for (_id, obj) in &result.output_objects {
+    for obj in result.output_objects.values() {
         store.insert(obj.clone());
     }
     // Remove deleted and wrapped objects. Wrapped objects are still
@@ -75,7 +75,7 @@ pub fn apply_effects_to_caching<F: ObjectFetcher>(
     store: &CachingStore<F>,
     result: &SimulateTransactionResult,
 ) {
-    for (_id, obj) in &result.output_objects {
+    for obj in result.output_objects.values() {
         store.insert(obj.clone());
     }
     for (id, _, _) in result.effects.deleted() {

@@ -17,6 +17,10 @@ Pick the backend that matches how you get at objects:
 
 The three networked executors pre-fetch input objects in batch, cache them across calls, and lazily load anything the VM pulls in during execution.
 
+## Related crates
+
+- [iota-local-exec](../iota-local-exec/) — one-shot CLI wrapper.
+
 ## Features
 
 The main workflows a developer reaches for when building against the crate. Each link opens a short doc with the full workflow — from nothing to a working output.

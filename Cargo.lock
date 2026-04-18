@@ -6713,6 +6713,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "iota-local-exec"
+version = "1.22.0-alpha"
+dependencies = [
+ "anyhow",
+ "bcs",
+ "clap",
+ "iota-framework",
+ "iota-local-executor",
+ "iota-protocol-config",
+ "iota-types",
+ "move-binary-format",
+ "move-core-types",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "iota-local-executor"
 version = "1.22.0-alpha"
 dependencies = [
