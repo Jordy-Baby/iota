@@ -35,25 +35,12 @@ fn synthetic_id() -> ObjectID {
     ObjectID::from_hex_literal("0x42").expect("static hex literal parses")
 }
 
-/// Sanity-check that `debug::print` in the fixture actually produces stdout
-/// output when `capture_debug_prints` is set — proving the `debug-print`
-/// feature chain (`iota-execution/debug-print` → `iota-move-natives-latest/\
-/// debug-print` → `move-stdlib-natives/testing`) is correctly wired.
-///
-/// We call `hello::greet()` which contains `debug::print(&b"...")`. The
-/// test is marked `#[ignore]` because stdout capture isn't available in this
-/// workspace (no `gag` crate) — running it with `--ignored --nocapture`
-/// prints the debug line so a developer can visually confirm. Phase 2 of the
-/// feature will populate `artifacts.debug_prints` and turn this into a real
-/// content-assertion.
+/// With `capture_debug_prints + structured_debug_capture`, the fixture's
+/// `debug::print(&b"hello from iota-local-executor")` call should land in
+/// `artifacts.debug_prints` as a real in-memory string — no stdout
+/// redirection needed.
 #[test]
-#[ignore = "\
-No stdout-capture crate (gag/shh) in the workspace yet; until Phase 2's \
-structured debug capture lands, this test is manual. Run with \
-`cargo test -p iota-local-executor --test local_package \
-greet_with_debug_prints_runs_and_prints -- --ignored --nocapture` and \
-verify the `[debug]` line appears in output."]
-fn greet_with_debug_prints_runs_and_prints() -> Result<()> {
+fn greet_debug_prints_captured_into_artifacts() -> Result<()> {
     use iota_framework::BuiltInFramework;
 
     let pkg = LocalPackage::compile(&fixture_path(), synthetic_id(), "hello", &protocol_config())?;
@@ -71,6 +58,7 @@ fn greet_with_debug_prints_runs_and_prints() -> Result<()> {
         store,
         DebugConfig {
             capture_debug_prints: true,
+            structured_debug_capture: true,
             ..DebugConfig::default()
         },
     )?;
@@ -97,12 +85,23 @@ fn greet_with_debug_prints_runs_and_prints() -> Result<()> {
         "execution should succeed: {:?}",
         out.result.effects.status()
     );
-    // Under `--nocapture` the test harness lets stdout through, so the
-    // `[debug]` line should be visible. Phase 2 will turn this into a real
-    // content assertion on `out.artifacts.debug_prints`.
+
     assert!(
-        out.artifacts.debug_prints.is_empty(),
-        "Phase 1 leaves `debug_prints` empty; Phase 2 will populate it"
+        !out.artifacts.debug_prints.is_empty(),
+        "structured_debug_capture must populate debug_prints"
+    );
+    // The fixture prints a byte-string literal; the native formats bytes as
+    // hex. Assert the line starts with our `[debug] ` prefix and contains
+    // the hex of "hello".
+    let hit = out
+        .artifacts
+        .debug_prints
+        .iter()
+        .any(|line| line.starts_with("[debug] ") && line.contains("68656c6c6f"));
+    assert!(
+        hit,
+        "expected a [debug] line containing hex(hello); got {:?}",
+        out.artifacts.debug_prints
     );
     Ok(())
 }

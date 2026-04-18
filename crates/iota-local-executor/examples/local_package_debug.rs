@@ -7,8 +7,7 @@
 //! Usage:
 //!   cargo run --example local_package_debug
 //!
-//! This is the end-to-end demo for the workflow described in
-//! `docs/LOCAL_DEBUGGING.md`:
+//! Steps:
 //!
 //! 1. `LocalPackage::compile` reuses the `iota-move-build` pipeline to compile
 //!    the fixture Move package at `tests/fixtures/hello_debug/` and binds its

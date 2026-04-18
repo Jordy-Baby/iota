@@ -3,7 +3,7 @@
 // Modifications Copyright (c) 2025 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
-use std::{collections::VecDeque, sync::Arc};
+use std::{cell::RefCell, collections::VecDeque, sync::Arc};
 
 use move_binary_format::errors::PartialVMResult;
 use move_core_types::{account_address::AccountAddress, gas_algebra::InternalGas};
@@ -18,6 +18,56 @@ use move_vm_types::{
 use smallvec::smallvec;
 
 use crate::helpers::make_module_natives;
+
+// ---------------------------------------------------------------------------
+// Thread-local debug sink
+//
+// When installed, `native_print` and `native_print_stack_trace` push formatted
+// output strings into this thread-local `Vec<String>` instead of writing to
+// stdout. This lets in-process tooling (e.g. `iota-local-executor`) capture
+// Move `debug::print` output programmatically without stdout redirection.
+//
+// Lives here rather than in a separate crate because the thread-local must
+// be shared by the native-function closures, and the natives are constructed
+// inside this crate.
+// ---------------------------------------------------------------------------
+
+thread_local! {
+    static DEBUG_SINK: RefCell<Option<Vec<String>>> = const { RefCell::new(None) };
+}
+
+/// Install an in-memory sink on the current thread. While installed,
+/// `debug::print` output is pushed into the sink instead of `println!`-ed.
+/// If a sink is already installed, its contents are preserved and a new
+/// run appends to it.
+pub fn install_debug_sink() {
+    DEBUG_SINK.with(|s| {
+        if s.borrow().is_none() {
+            *s.borrow_mut() = Some(Vec::new());
+        }
+    });
+}
+
+/// Take the captured lines off the thread-local sink and uninstall it.
+/// Subsequent `debug::print` calls will fall back to `println!` until
+/// [`install_debug_sink`] is called again.
+pub fn take_debug_sink() -> Vec<String> {
+    DEBUG_SINK.with(|s| s.borrow_mut().take().unwrap_or_default())
+}
+
+/// Emit `line` via the installed sink, or `println!` if none is installed.
+fn emit_debug_line(line: String) {
+    let mut consumed = false;
+    DEBUG_SINK.with(|s| {
+        if let Some(v) = s.borrow_mut().as_mut() {
+            v.push(line.clone());
+            consumed = true;
+        }
+    });
+    if !consumed {
+        println!("{}", line);
+    }
+}
 
 /// ****************************************************************************
 /// native fun print
@@ -75,7 +125,7 @@ fn native_print(
             single_line,
             include_int_types,
         )?;
-        println!("{}", out);
+        emit_debug_line(out);
     }
 
     Ok(NativeResult::ok(gas_params.base_cost, smallvec![]))
@@ -137,7 +187,7 @@ fn native_print_stack_trace(
     {
         let mut s = String::new();
         context.print_stack_trace(&mut s)?;
-        println!("{}", s);
+        emit_debug_line(s);
     }
 
     Ok(NativeResult::ok(gas_params.base_cost, smallvec![]))

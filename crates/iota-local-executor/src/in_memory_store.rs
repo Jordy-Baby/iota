@@ -36,6 +36,16 @@ impl InMemoryStore {
         self.objects.insert(object.id(), object);
     }
 
+    /// Remove an object from the store. Returns the object that was removed,
+    /// or `None` if nothing was there.
+    ///
+    /// Used when chaining transactions to delete objects that the previous
+    /// transaction dropped (`TransactionEffects::deleted`) or wrapped
+    /// (`TransactionEffects::wrapped`).
+    pub fn remove(&mut self, id: &ObjectID) -> Option<Object> {
+        self.objects.remove(id)
+    }
+
     /// Get an object by ID.
     pub fn get_object(&self, id: &ObjectID) -> Option<&Object> {
         self.objects.get(id)

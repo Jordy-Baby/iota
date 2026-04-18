@@ -75,6 +75,19 @@ impl<F> CachingStore<F> {
             .insert(object.id(), object);
     }
 
+    /// Remove an object from the cache (and any package-override for the
+    /// same ID). Returns the removed object if it was cached.
+    ///
+    /// Used when chaining transactions to drop objects that the previous
+    /// transaction deleted or wrapped.
+    pub fn remove(&self, id: &ObjectID) -> Option<Object> {
+        self.package_overrides
+            .write()
+            .expect("lock poisoned")
+            .remove(id);
+        self.objects.write().expect("lock poisoned").remove(id)
+    }
+
     /// Install a local package under a synthetic [`ObjectID`]. Future
     /// `BackingPackageStore::get_package_object` and `ObjectStore` reads for
     /// this ID return the override instead of hitting the remote fetcher.

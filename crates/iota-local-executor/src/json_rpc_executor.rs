@@ -16,7 +16,7 @@ use iota_types::{
 };
 
 use crate::{
-    DebugConfig, DebugSimulateResult,
+    ChainInfo, DebugConfig, DebugSimulateResult,
     caching_store::{JsonRpcFetcher, JsonRpcStore},
     execution::{self, ExecutionEnv, collect_all_object_ids, split_transaction_refs},
 };
@@ -39,10 +39,19 @@ pub enum ObjectFetchMode {
 
 /// A local executor that runs Move VM transactions by fetching objects from a
 /// remote node.
+///
+/// The executor owns a persistent [`JsonRpcStore`] that caches fetched
+/// objects (packages, immutable objects, and mutable objects from the last
+/// fetch) across [`Self::simulate_transaction`] calls. Framework packages
+/// and other immutable objects are therefore fetched at most once per
+/// executor. Call [`Self::clear_cache`] to drop the cache when staleness
+/// matters, or use [`Self::simulate_transaction_with_debug_using`] with a
+/// caller-supplied store for isolated one-off runs.
 pub struct JsonRpcExecutor {
     client: IotaClient,
     env: ExecutionEnv,
     fetch_mode: ObjectFetchMode,
+    shared_store: JsonRpcStore,
 }
 
 impl JsonRpcExecutor {
@@ -54,35 +63,39 @@ impl JsonRpcExecutor {
     }
 
     /// Create a new `JsonRpcExecutor` with a custom [`DebugConfig`] for
-    /// debug-print capture, gas profiling, and/or execution tracing. See
-    /// `docs/LOCAL_DEBUGGING.md`.
+    /// debug-print capture, gas profiling, and/or execution tracing.
     pub async fn with_debug(client: IotaClient, debug_config: DebugConfig) -> Result<Self> {
-        let reference_gas_price = client.read_api().get_reference_gas_price().await?;
+        let info = ChainInfo::fetch_from_json_rpc(&client).await?;
+        Self::with_chain_info_and_debug(client, info, debug_config)
+    }
 
-        let protocol_config_response = client.read_api().get_protocol_config(None).await?;
-        let protocol_version = protocol_config_response.protocol_version;
+    /// Create a new `JsonRpcExecutor` using a pre-fetched [`ChainInfo`].
+    /// Skips the round-trip to the node for protocol/epoch/gas-price —
+    /// useful when building many executors against the same chain state.
+    pub fn with_chain_info(client: IotaClient, info: ChainInfo) -> Result<Self> {
+        Self::with_chain_info_and_debug(client, info, DebugConfig::default())
+    }
 
-        let latest_checkpoint = client
-            .read_api()
-            .get_latest_checkpoint_sequence_number()
-            .await?;
-        let checkpoint = client
-            .read_api()
-            .get_checkpoint(latest_checkpoint.into())
-            .await?;
-
+    /// [`Self::with_chain_info`] + a caller-supplied [`DebugConfig`].
+    pub fn with_chain_info_and_debug(
+        client: IotaClient,
+        info: ChainInfo,
+        debug_config: DebugConfig,
+    ) -> Result<Self> {
         let env = ExecutionEnv::with_debug(
-            protocol_version,
-            reference_gas_price,
-            checkpoint.epoch,
-            checkpoint.timestamp_ms,
+            info.protocol_version,
+            info.reference_gas_price,
+            info.epoch_id,
+            info.epoch_timestamp_ms,
             debug_config,
         )?;
 
+        let shared_store = JsonRpcStore::new(JsonRpcFetcher(client.clone()));
         Ok(Self {
             client,
             env,
             fetch_mode: ObjectFetchMode::default(),
+            shared_store,
         })
     }
 
@@ -97,11 +110,17 @@ impl JsonRpcExecutor {
         self
     }
 
-    /// Simulate a transaction locally.
+    /// Simulate a transaction locally against the executor's persistent
+    /// [`JsonRpcStore`] cache.
     ///
     /// - `VmChecks::Enabled` → dry-run mode (full checks, like a real
     ///   transaction).
     /// - `VmChecks::Disabled` → dev-inspect mode (relaxed Move VM checks).
+    ///
+    /// **Caching:** fetched packages and objects persist across calls. Use
+    /// [`Self::clear_cache`] to drop them if staleness matters, or
+    /// [`Self::simulate_transaction_with_debug_using`] with a fresh
+    /// [`Self::new_store`] store for isolated runs.
     ///
     /// **Note on shared objects:** Shared objects are always fetched at the
     /// latest version because their version is assigned by consensus and is
@@ -113,15 +132,41 @@ impl JsonRpcExecutor {
         transaction: TransactionData,
         checks: VmChecks,
     ) -> Result<SimulateTransactionResult> {
-        let store = JsonRpcStore::new(JsonRpcFetcher(self.client.clone()));
-        self.prefetch_objects(&store, &transaction).await?;
-        execution::simulate(&self.env, &store, transaction, checks)
+        self.prefetch_objects(&self.shared_store, &transaction)
+            .await?;
+        execution::simulate(&self.env, &self.shared_store, transaction, checks)
     }
 
-    /// Return the underlying store so local packages can be installed as
-    /// overrides via `LocalPackage::install_into_caching`.
+    /// Return a reference to the executor's persistent store. Useful for
+    /// installing a [`LocalPackage`](crate::LocalPackage) override via
+    /// `install_into_caching` before the first simulation.
+    pub fn store(&self) -> &JsonRpcStore {
+        &self.shared_store
+    }
+
+    /// Build a fresh, isolated [`JsonRpcStore`] that shares this executor's
+    /// JSON-RPC client. Pair with
+    /// [`Self::simulate_transaction_with_debug_using`] for runs that must
+    /// not observe or pollute the persistent cache.
     pub fn new_store(&self) -> JsonRpcStore {
         JsonRpcStore::new(JsonRpcFetcher(self.client.clone()))
+    }
+
+    /// Drop all cached objects and package overrides. The next simulation
+    /// will fetch from the remote again.
+    pub fn clear_cache(&mut self) {
+        self.shared_store = JsonRpcStore::new(JsonRpcFetcher(self.client.clone()));
+    }
+
+    /// Decode a `TransactionEvents` payload into fully-annotated
+    /// [`DecodedEvent`](crate::DecodedEvent)s using this executor's Move VM
+    /// type-layout resolver and persistent object cache.
+    pub fn decode_events(
+        &self,
+        events: &iota_types::effects::TransactionEvents,
+    ) -> Vec<Result<crate::DecodedEvent>> {
+        let mut resolver = self.env.type_layout_resolver(Box::new(&self.shared_store));
+        crate::decode_events(events, resolver.as_mut())
     }
 
     /// Simulate a transaction and return the captured [`DebugArtifacts`]
@@ -132,12 +177,9 @@ impl JsonRpcExecutor {
         transaction: TransactionData,
         checks: VmChecks,
     ) -> Result<DebugSimulateResult> {
-        self.simulate_transaction_with_debug_using(
-            JsonRpcStore::new(JsonRpcFetcher(self.client.clone())),
-            transaction,
-            checks,
-        )
-        .await
+        self.prefetch_objects(&self.shared_store, &transaction)
+            .await?;
+        execution::simulate_with_debug(&self.env, &self.shared_store, transaction, checks)
     }
 
     /// Variant of [`Self::simulate_transaction_with_debug`] that reuses a
@@ -172,10 +214,9 @@ impl JsonRpcExecutor {
         signed_data: SenderSignedData,
         checks: VmChecks,
     ) -> Result<SimulateTransactionResult> {
-        let store = JsonRpcStore::new(JsonRpcFetcher(self.client.clone()));
-        self.prefetch_objects(&store, signed_data.transaction_data())
+        self.prefetch_objects(&self.shared_store, signed_data.transaction_data())
             .await?;
-        execution::simulate_signed(&self.env, &store, signed_data, checks)
+        execution::simulate_signed(&self.env, &self.shared_store, signed_data, checks)
     }
 
     /// Signed-transaction variant of [`Self::simulate_transaction_with_debug`].
@@ -184,12 +225,9 @@ impl JsonRpcExecutor {
         signed_data: SenderSignedData,
         checks: VmChecks,
     ) -> Result<DebugSimulateResult> {
-        self.simulate_signed_transaction_with_debug_using(
-            JsonRpcStore::new(JsonRpcFetcher(self.client.clone())),
-            signed_data,
-            checks,
-        )
-        .await
+        self.prefetch_objects(&self.shared_store, signed_data.transaction_data())
+            .await?;
+        execution::simulate_signed_with_debug(&self.env, &self.shared_store, signed_data, checks)
     }
 
     /// Variant of [`Self::simulate_signed_transaction_with_debug`] that reuses

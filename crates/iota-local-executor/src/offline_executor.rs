@@ -3,15 +3,17 @@
 
 //! [`OfflineExecutor`] — fully offline, all objects provided upfront.
 
-use anyhow::Result;
+use anyhow::{Result, Result as AnyResult};
 use iota_protocol_config::ProtocolVersion;
 use iota_types::{
+    effects::TransactionEvents,
     transaction::{SenderSignedData, TransactionData},
     transaction_executor::{SimulateTransactionResult, VmChecks},
 };
 
 use crate::{
     DebugConfig, DebugSimulateResult, InMemoryStore,
+    events::{DecodedEvent, decode_events},
     execution::{self, ExecutionEnv},
 };
 
@@ -63,8 +65,6 @@ impl OfflineExecutor {
 
     /// Create a new fully offline executor with a custom [`DebugConfig`] that
     /// enables debug-print capture, gas profiling, and/or execution tracing.
-    ///
-    /// See `docs/LOCAL_DEBUGGING.md` for the full workflow.
     pub fn with_debug(
         protocol_version: ProtocolVersion,
         reference_gas_price: u64,
@@ -87,6 +87,15 @@ impl OfflineExecutor {
     /// additional objects before execution.
     pub fn store_mut(&mut self) -> &mut InMemoryStore {
         &mut self.store
+    }
+
+    /// Decode a `TransactionEvents` payload into fully-annotated
+    /// [`DecodedEvent`]s using this executor's Move VM type-layout resolver
+    /// and package store. One `Result` per event so a single bad event
+    /// doesn't mask the rest.
+    pub fn decode_events(&self, events: &TransactionEvents) -> Vec<AnyResult<DecodedEvent>> {
+        let mut resolver = self.env.type_layout_resolver(Box::new(&self.store));
+        decode_events(events, resolver.as_mut())
     }
 
     /// Simulate a transaction offline.

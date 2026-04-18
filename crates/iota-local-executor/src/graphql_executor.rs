@@ -7,7 +7,6 @@
 use anyhow::Result;
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use iota_graphql_rpc_client::simple_client::SimpleClient;
-use iota_protocol_config::ProtocolVersion;
 use iota_types::{
     object::Object,
     transaction::{SenderSignedData, TransactionData},
@@ -15,7 +14,7 @@ use iota_types::{
 };
 
 use crate::{
-    DebugConfig, DebugSimulateResult,
+    ChainInfo, DebugConfig, DebugSimulateResult,
     caching_store::{GraphqlFetcher, GraphqlStore},
     execution::{self, ExecutionEnv, collect_all_object_ids, split_transaction_refs},
     json_rpc_executor::ObjectFetchMode,
@@ -23,10 +22,15 @@ use crate::{
 
 /// A local executor that runs Move VM transactions by fetching objects from a
 /// remote node via GraphQL.
+///
+/// The executor owns a persistent [`GraphqlStore`] that caches fetched
+/// objects across simulation calls. See [`crate::JsonRpcExecutor`] for the
+/// caching model.
 pub struct GraphqlExecutor {
     client: SimpleClient,
     env: ExecutionEnv,
     fetch_mode: ObjectFetchMode,
+    shared_store: GraphqlStore,
 }
 
 impl GraphqlExecutor {
@@ -38,63 +42,36 @@ impl GraphqlExecutor {
     /// Create a new `GraphqlExecutor` with a custom [`DebugConfig`] for
     /// debug-print capture, gas profiling, and/or execution tracing.
     pub async fn with_debug(client: SimpleClient, debug_config: DebugConfig) -> Result<Self> {
-        let query = r#"{
-            epoch {
-                epochId
-                referenceGasPrice
-                startTimestamp
-                protocolConfigs {
-                    protocolVersion
-                }
-            }
-        }"#;
+        let info = ChainInfo::fetch_from_graphql(&client).await?;
+        Self::with_chain_info_and_debug(client, info, debug_config)
+    }
 
-        let json = client
-            .execute(query.to_string(), vec![])
-            .await
-            .map_err(|e| anyhow::anyhow!("failed to fetch epoch info via GraphQL: {e}"))?;
+    /// Create a new `GraphqlExecutor` using a pre-fetched [`ChainInfo`]. See
+    /// [`crate::JsonRpcExecutor::with_chain_info`].
+    pub fn with_chain_info(client: SimpleClient, info: ChainInfo) -> Result<Self> {
+        Self::with_chain_info_and_debug(client, info, DebugConfig::default())
+    }
 
-        let epoch_data = json
-            .pointer("/data/epoch")
-            .ok_or_else(|| anyhow::anyhow!("missing epoch data in GraphQL response"))?;
-
-        let epoch_id = epoch_data
-            .get("epochId")
-            .and_then(|v| v.as_u64())
-            .ok_or_else(|| anyhow::anyhow!("missing epochId"))?;
-
-        let reference_gas_price = epoch_data
-            .get("referenceGasPrice")
-            .and_then(|v| v.as_str())
-            .and_then(|s| s.parse::<u64>().ok())
-            .ok_or_else(|| anyhow::anyhow!("missing referenceGasPrice"))?;
-
-        let epoch_timestamp_ms = epoch_data
-            .get("startTimestamp")
-            .and_then(|v| v.as_str())
-            .and_then(|s| {
-                // GraphQL returns ISO 8601 timestamps — parse to millis.
-                chrono_to_millis(s)
-            })
-            .ok_or_else(|| anyhow::anyhow!("missing startTimestamp"))?;
-
-        let protocol_version = epoch_data
-            .pointer("/protocolConfigs/protocolVersion")
-            .and_then(|v| v.as_u64())
-            .ok_or_else(|| anyhow::anyhow!("missing protocolVersion"))?;
-
+    /// [`Self::with_chain_info`] + a caller-supplied [`DebugConfig`].
+    pub fn with_chain_info_and_debug(
+        client: SimpleClient,
+        info: ChainInfo,
+        debug_config: DebugConfig,
+    ) -> Result<Self> {
         let env = ExecutionEnv::with_debug(
-            ProtocolVersion::new(protocol_version),
-            reference_gas_price,
-            epoch_id,
-            epoch_timestamp_ms,
+            info.protocol_version,
+            info.reference_gas_price,
+            info.epoch_id,
+            info.epoch_timestamp_ms,
             debug_config,
         )?;
 
+        let shared_store = GraphqlStore::new(GraphqlFetcher(client.clone()));
         Ok(Self {
             client,
             env,
             fetch_mode: ObjectFetchMode::default(),
+            shared_store,
         })
     }
 
@@ -109,25 +86,46 @@ impl GraphqlExecutor {
         self
     }
 
-    /// Simulate a transaction locally.
-    ///
-    /// See [`crate::JsonRpcExecutor::simulate_transaction`] for details on
-    /// `VmChecks` and shared-object limitations.
+    /// Simulate a transaction locally against the executor's persistent
+    /// [`GraphqlStore`] cache. See
+    /// [`crate::JsonRpcExecutor::simulate_transaction`] for details on
+    /// `VmChecks`, caching, and shared-object limitations.
     pub async fn simulate_transaction(
         &self,
         transaction: TransactionData,
         checks: VmChecks,
     ) -> Result<SimulateTransactionResult> {
-        let store = GraphqlStore::new(GraphqlFetcher(self.client.clone()));
-        self.prefetch_objects(&store, &transaction).await?;
-        execution::simulate(&self.env, &store, transaction, checks)
+        self.prefetch_objects(&self.shared_store, &transaction)
+            .await?;
+        execution::simulate(&self.env, &self.shared_store, transaction, checks)
+    }
+
+    /// Reference to the executor's persistent store.
+    pub fn store(&self) -> &GraphqlStore {
+        &self.shared_store
     }
 
     /// Create a fresh [`GraphqlStore`] sharing this executor's GraphQL
-    /// client — lets callers pre-install a
-    /// [`LocalPackage`](crate::LocalPackage) before simulating.
+    /// client — isolated from the persistent cache.
     pub fn new_store(&self) -> GraphqlStore {
         GraphqlStore::new(GraphqlFetcher(self.client.clone()))
+    }
+
+    /// Drop all cached objects. The next simulation will fetch from the
+    /// remote again.
+    pub fn clear_cache(&mut self) {
+        self.shared_store = GraphqlStore::new(GraphqlFetcher(self.client.clone()));
+    }
+
+    /// Decode a `TransactionEvents` payload into fully-annotated
+    /// [`DecodedEvent`](crate::DecodedEvent)s using this executor's Move VM
+    /// type-layout resolver and persistent object cache.
+    pub fn decode_events(
+        &self,
+        events: &iota_types::effects::TransactionEvents,
+    ) -> Vec<Result<crate::DecodedEvent>> {
+        let mut resolver = self.env.type_layout_resolver(Box::new(&self.shared_store));
+        crate::decode_events(events, resolver.as_mut())
     }
 
     /// Simulate a transaction and return the captured [`DebugArtifacts`]
@@ -137,8 +135,9 @@ impl GraphqlExecutor {
         transaction: TransactionData,
         checks: VmChecks,
     ) -> Result<DebugSimulateResult> {
-        self.simulate_transaction_with_debug_using(self.new_store(), transaction, checks)
-            .await
+        self.prefetch_objects(&self.shared_store, &transaction)
+            .await?;
+        execution::simulate_with_debug(&self.env, &self.shared_store, transaction, checks)
     }
 
     /// Variant of [`Self::simulate_transaction_with_debug`] that reuses a
@@ -165,10 +164,9 @@ impl GraphqlExecutor {
         signed_data: SenderSignedData,
         checks: VmChecks,
     ) -> Result<SimulateTransactionResult> {
-        let store = GraphqlStore::new(GraphqlFetcher(self.client.clone()));
-        self.prefetch_objects(&store, signed_data.transaction_data())
+        self.prefetch_objects(&self.shared_store, signed_data.transaction_data())
             .await?;
-        execution::simulate_signed(&self.env, &store, signed_data, checks)
+        execution::simulate_signed(&self.env, &self.shared_store, signed_data, checks)
     }
 
     /// Signed-transaction variant of [`Self::simulate_transaction_with_debug`].
@@ -177,8 +175,9 @@ impl GraphqlExecutor {
         signed_data: SenderSignedData,
         checks: VmChecks,
     ) -> Result<DebugSimulateResult> {
-        self.simulate_signed_transaction_with_debug_using(self.new_store(), signed_data, checks)
-            .await
+        self.prefetch_objects(&self.shared_store, signed_data.transaction_data())
+            .await?;
+        execution::simulate_signed_with_debug(&self.env, &self.shared_store, signed_data, checks)
     }
 
     /// Variant of [`Self::simulate_signed_transaction_with_debug`] that reuses
@@ -293,7 +292,7 @@ impl GraphqlExecutor {
 }
 
 /// Parse an ISO 8601 / RFC 3339 timestamp string to milliseconds since epoch.
-fn chrono_to_millis(s: &str) -> Option<u64> {
+pub(crate) fn chrono_to_millis(s: &str) -> Option<u64> {
     // GraphQL DateTime is typically a Unix timestamp in ms as a string, or an
     // ISO 8601 date. Try parsing as a plain integer first (ms since epoch).
     if let Ok(ms) = s.parse::<u64>() {

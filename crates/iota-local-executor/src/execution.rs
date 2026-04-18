@@ -108,18 +108,34 @@ impl ExecutionEnv {
         self.debug_config.trace
     }
 
+    /// Get a `LayoutResolver` built from this env's Move VM and the supplied
+    /// type-layout store. Used by event-decoding helpers on each executor.
+    pub(crate) fn type_layout_resolver<'r, 'store: 'r>(
+        &'r self,
+        store: Box<dyn iota_types::execution::TypeLayoutStore + 'store>,
+    ) -> Box<dyn iota_types::layout_resolver::LayoutResolver + 'r> {
+        self.executor.type_layout_resolver(store)
+    }
+
     /// Materialise the captured artifacts for the current run: read the
     /// profile JSON back from disk if the sink was [`ProfileSink::Capture`],
-    /// and attach the finished trace if one was requested.
+    /// drain the thread-local `debug::print` sink if one was installed, and
+    /// attach the finished trace if one was requested.
     fn collect_artifacts(&self, trace_builder: Option<MoveTraceBuilder>) -> DebugArtifacts {
         let profile = match (&self.debug_config.profile, &self.capture_profile_dir) {
             (Some(ProfileSink::File(p)), _) => Some(ProfileOutput::Path(p.clone())),
-            (Some(ProfileSink::Capture), Some(dir)) => read_first_json_in_dir(dir),
+            (Some(ProfileSink::Capture), Some(dir)) => merge_profile_dir(dir),
             _ => None,
         };
 
+        let debug_prints = if self.debug_config.structured_debug_capture {
+            move_stdlib_natives::debug::take_debug_sink()
+        } else {
+            Vec::new()
+        };
+
         DebugArtifacts {
-            debug_prints: Vec::new(), // Phase 2 populates this.
+            debug_prints,
             profile,
             trace: trace_builder.map(|b| b.into_trace()),
         }
@@ -145,22 +161,86 @@ fn profile_capture_dir() -> PathBuf {
     std::env::temp_dir().join(format!("iota-local-executor-gas-profile-{pid}-{n}"))
 }
 
-/// Return the first JSON file in `dir` as [`ProfileOutput::Json`], or `None`
-/// if the directory is empty or unreadable.
-fn read_first_json_in_dir(dir: &std::path::Path) -> Option<ProfileOutput> {
+/// Merge every Speedscope JSON file written into `dir` by the Move VM
+/// profiler into a single Speedscope document.
+///
+/// The profiler writes one file per VM invocation — e.g. a transaction with a
+/// `MoveAuthenticator` produces two files: one for the authenticator call and
+/// one for the PTB body. Each file has its own `shared.frames` array and a
+/// single-element `profiles` array; the merged document preserves every
+/// profile while rebuilding a de-duplicated frames table.
+///
+/// Returns `None` if the directory is missing or contains no JSON files.
+fn merge_profile_dir(dir: &std::path::Path) -> Option<ProfileOutput> {
     let entries = std::fs::read_dir(dir).ok()?;
+    let mut docs: Vec<serde_json::Value> = Vec::new();
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.extension().and_then(|s| s.to_str()) == Some("json") {
-            match std::fs::read(&path) {
-                Ok(bytes) => return Some(ProfileOutput::Json(bytes)),
+        if path.extension().and_then(|s| s.to_str()) != Some("json") {
+            continue;
+        }
+        match std::fs::read(&path) {
+            Ok(bytes) => match serde_json::from_slice::<serde_json::Value>(&bytes) {
+                Ok(doc) => docs.push(doc),
                 Err(e) => {
-                    tracing::warn!("Failed to read captured gas profile at {path:?}: {e}");
+                    tracing::warn!("Failed to parse captured gas profile at {path:?}: {e}")
                 }
+            },
+            Err(e) => tracing::warn!("Failed to read captured gas profile at {path:?}: {e}"),
+        }
+    }
+    if docs.is_empty() {
+        return None;
+    }
+    // Fast path: exactly one file — return it unchanged.
+    if docs.len() == 1 {
+        return serde_json::to_vec(&docs[0]).ok().map(ProfileOutput::Json);
+    }
+    // Merge: concatenate `profiles` arrays and rebuild `shared.frames` as the
+    // de-duplicated union. Each profile's event frame-indices are rewritten
+    // to point into the merged table.
+    let mut merged_frames: Vec<serde_json::Value> = Vec::new();
+    let mut merged_profiles: Vec<serde_json::Value> = Vec::new();
+    for mut doc in docs {
+        let Some(frames) = doc
+            .pointer("/shared/frames")
+            .and_then(|v| v.as_array())
+            .cloned()
+        else {
+            continue;
+        };
+        let mut index_map: Vec<usize> = Vec::with_capacity(frames.len());
+        for frame in frames {
+            let existing = merged_frames.iter().position(|f| f == &frame);
+            index_map.push(existing.unwrap_or_else(|| {
+                merged_frames.push(frame);
+                merged_frames.len() - 1
+            }));
+        }
+        if let Some(profiles) = doc.get_mut("profiles").and_then(|v| v.as_array_mut()) {
+            for profile in profiles.iter_mut() {
+                if let Some(events) = profile.get_mut("events").and_then(|v| v.as_array_mut()) {
+                    for ev in events.iter_mut() {
+                        if let Some(frame) =
+                            ev.get("frame").and_then(|v| v.as_u64()).map(|i| i as usize)
+                        {
+                            if let Some(new) = index_map.get(frame) {
+                                ev["frame"] = serde_json::json!(new);
+                            }
+                        }
+                    }
+                }
+                merged_profiles.push(profile.clone());
             }
         }
     }
-    None
+    let merged = serde_json::json!({
+        "exporter": "iota-local-executor (merged)",
+        "$schema": "https://www.speedscope.app/file-format-schema.json",
+        "shared": { "frames": merged_frames },
+        "profiles": merged_profiles,
+    });
+    serde_json::to_vec(&merged).ok().map(ProfileOutput::Json)
 }
 
 /// Run a transaction against the given store: validate, resolve objects, and
@@ -187,6 +267,9 @@ pub(crate) fn simulate_with_debug(
     transaction: TransactionData,
     checks: VmChecks,
 ) -> Result<DebugSimulateResult> {
+    if env.debug_config.structured_debug_capture {
+        move_stdlib_natives::debug::install_debug_sink();
+    }
     let prepared = prepare_transaction(env, store, transaction, checks, 0)?;
     let mut trace_builder = env.trace_enabled().then(MoveTraceBuilder::new);
     let result = execute_prepared(env, store, prepared, checks, &mut trace_builder)?;
@@ -222,6 +305,9 @@ pub(crate) fn simulate_signed_with_debug(
     signed_data: SenderSignedData,
     checks: VmChecks,
 ) -> Result<DebugSimulateResult> {
+    if env.debug_config.structured_debug_capture {
+        move_stdlib_natives::debug::install_debug_sink();
+    }
     let verify_params = VerifyParams::default();
     let zklogin_inputs_cache = Arc::new(VerifiedDigestCache::new_empty());
 
@@ -231,7 +317,9 @@ pub(crate) fn simulate_signed_with_debug(
         &verify_params,
         zklogin_inputs_cache,
     )
-    .map_err(|e| anyhow::anyhow!("signature verification failed: {e}"))?;
+    .map_err(|e| {
+        crate::error::LocalExecError::validation("signature verification", anyhow::anyhow!("{e}"))
+    })?;
 
     let move_authenticator = signed_data.sender_move_authenticator().cloned();
     let transaction = signed_data.into_inner().intent_message.value;
@@ -275,7 +363,14 @@ fn prepare_transaction(
     checks: VmChecks,
     authenticator_gas_budget: u64,
 ) -> Result<PreparedTransaction> {
-    transaction.validity_check_no_gas_check(&env.protocol_config)?;
+    transaction
+        .validity_check_no_gas_check(&env.protocol_config)
+        .map_err(|e| {
+            crate::error::LocalExecError::validation(
+                "transaction validity check",
+                anyhow::anyhow!(e),
+            )
+        })?;
 
     // Update gas payment references to match actual object versions in the store.
     let updated_gas: Vec<_> = transaction

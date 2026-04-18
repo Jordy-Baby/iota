@@ -14,21 +14,35 @@
 //! - [`OfflineExecutor`]: Uses only pre-provided objects, no network access.
 
 mod caching_store;
+mod chain_info;
 mod debug;
+mod error;
+mod events;
 mod execution;
+mod gas;
 mod graphql_executor;
 mod grpc_executor;
+mod ide;
 mod in_memory_store;
 mod json_rpc_executor;
 mod local_package;
+mod multi_tx;
 mod offline_executor;
 
 pub use caching_store::{GraphqlStore, GrpcStore, JsonRpcStore};
+pub use chain_info::ChainInfo;
 pub use debug::{DebugArtifacts, DebugConfig, DebugSimulateResult, ProfileOutput, ProfileSink};
+pub use error::LocalExecError;
+pub use events::{DecodedEvent, decode_events};
+pub use gas::GasEstimate;
 pub use graphql_executor::GraphqlExecutor;
 pub use grpc_executor::GrpcExecutor;
+pub use ide::{FunctionGasSummary, SourceSpan, summarize_by_function, summarize_with_source};
 pub use in_memory_store::InMemoryStore;
 pub use iota_types::{transaction::SenderSignedData, transaction_executor::VmChecks};
 pub use json_rpc_executor::{JsonRpcExecutor, ObjectFetchMode};
 pub use local_package::LocalPackage;
+pub use multi_tx::{
+    ChainHistory, ChainedOfflineExecutor, apply_effects_to_caching, apply_effects_to_in_memory,
+};
 pub use offline_executor::OfflineExecutor;

@@ -5,16 +5,15 @@
 //! executor under a caller-chosen synthetic [`ObjectID`], without ever
 //! publishing it on-chain.
 //!
-//! See `docs/LOCAL_DEBUGGING.md` for the end-to-end workflow. The one-line
-//! summary: `LocalPackage::compile(path, 0x42, "hello", &protocol_config)`
-//! gives you an [`Object`] that can be `install_into(...)` a store so that
-//! any PTB referencing `0x42::<module>::<fn>` resolves against the freshly
-//! compiled bytecode.
+//! One-line summary: `LocalPackage::compile(path, 0x42, "hello",
+//! &protocol_config)` gives you an [`Object`] that can be `install_into(...)`
+//! a store so that any PTB referencing `0x42::<module>::<fn>` resolves against
+//! the freshly compiled bytecode.
 //!
-//! This is Phase 1 of the local debugging feature — it reuses the existing
-//! `iota-move-build` pipeline (including `BuildConfig::new_for_testing_\
-//! replace_addresses`) rather than reimplementing compilation, so framework
-//! linkage, type-origin tables, and bytecode verification all come for free.
+//! Reuses the existing `iota-move-build` pipeline (including
+//! `BuildConfig::new_for_testing_replace_addresses`) rather than
+//! reimplementing compilation, so framework linkage, type-origin tables, and
+//! bytecode verification all come for free.
 
 use std::path::Path;
 

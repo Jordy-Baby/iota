@@ -8,8 +8,6 @@
 //! and [`crate::debug::DebugSimulateResult`] for the additive result shape that
 //! carries captured artifacts alongside the normal
 //! [`SimulateTransactionResult`](iota_types::transaction_executor::SimulateTransactionResult).
-//!
-//! Design and phased rollout live in `docs/LOCAL_DEBUGGING.md`.
 
 use std::path::PathBuf;
 

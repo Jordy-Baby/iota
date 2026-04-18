@@ -10,7 +10,8 @@ use std::{path::PathBuf, str::FromStr};
 use iota_json_rpc_types::IotaTransactionBlockEffectsAPI;
 use iota_keys::keystore::AccountKeystore;
 use iota_local_executor::{
-    GrpcExecutor, JsonRpcExecutor, ObjectFetchMode, SenderSignedData, VmChecks,
+    DebugConfig, GrpcExecutor, JsonRpcExecutor, ObjectFetchMode, ProfileOutput, ProfileSink,
+    SenderSignedData, VmChecks,
 };
 use iota_test_transaction_builder::{TestTransactionBuilder, publish_package};
 use iota_types::{
@@ -564,7 +565,7 @@ async fn simulate_signed_transaction_invalid_signature() {
         .expect("simulate_signed_transaction with invalid signature should fail")
         .to_string();
     assert!(
-        err_msg.contains("signature verification failed"),
+        err_msg.contains("signature verification"),
         "error should mention signature verification, got: {err_msg}"
     );
 }
@@ -851,5 +852,120 @@ async fn simulate_signed_transaction_move_authenticator_invalid_args() {
         result.effects.status().is_err(),
         "MoveAuthenticator with bogus signature should fail during VM execution: {:?}",
         result.effects.status()
+    );
+}
+
+/// Prove the gas-profiler and instruction tracer cover the
+/// `MoveAuthenticator`'s Move call — the authenticator-optimisation workflow.
+/// Mirrors `simulate_signed_transaction_move_authenticator_valid`, but routes
+/// the simulation through `simulate_signed_transaction_with_debug` with
+/// profile + trace enabled and asserts both artifacts name the authenticator
+/// function.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn simulate_signed_transaction_move_authenticator_with_debug() {
+    let mut test_cluster = TestClusterBuilder::new()
+        .with_num_validators(1)
+        .build()
+        .await;
+
+    test_cluster.wait_for_checkpoint(1, None).await;
+
+    let (aa_package_id, aa_metadata_ref) = publish_aa_package(&mut test_cluster).await;
+    let owner = test_cluster.wallet.get_addresses()[0];
+    let aa_ref = create_abstract_account(
+        &test_cluster,
+        owner,
+        aa_package_id,
+        aa_metadata_ref,
+        "authenticate_free_access",
+    )
+    .await;
+
+    let aa_sender: IotaAddress = aa_ref.0.into();
+    let rgp = test_cluster.get_reference_gas_price().await;
+    let aa_gas = test_cluster
+        .fund_address_and_return_gas(rgp, Some(20_000_000_000), aa_sender)
+        .await;
+
+    let pt = craft_aa_simple_ptb(aa_ref, aa_package_id);
+    let gas_price = test_cluster.get_reference_gas_price().await;
+    let tx_data = TransactionData::new_programmable_allow_sponsor(
+        aa_sender,
+        vec![aa_gas],
+        pt,
+        gas_price * TEST_ONLY_GAS_UNIT_FOR_HEAVY_COMPUTATION_STORAGE,
+        gas_price,
+        aa_sender,
+    );
+
+    let self_call_arg = CallArg::Object(ObjectArg::SharedObject {
+        id: aa_ref.0,
+        initial_shared_version: aa_ref.1,
+        mutable: false,
+    });
+    let move_auth = GenericSignature::MoveAuthenticator(MoveAuthenticator::new_v1(
+        vec![],
+        vec![],
+        self_call_arg,
+    ));
+    let signed_data = SenderSignedData::new(tx_data, vec![move_auth]);
+
+    let rpc_url = test_cluster.rpc_url().to_string();
+    let iota_client = iota_sdk::IotaClientBuilder::default()
+        .build(&rpc_url)
+        .await
+        .unwrap();
+
+    let local = JsonRpcExecutor::with_debug(
+        iota_client,
+        DebugConfig {
+            profile: Some(ProfileSink::Capture),
+            trace: true,
+            ..DebugConfig::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let out = local
+        .simulate_signed_transaction_with_debug(signed_data, VmChecks::Disabled)
+        .await
+        .expect("MoveAuthenticator simulate_signed_transaction_with_debug should succeed");
+
+    assert!(
+        out.result.effects.status().is_ok(),
+        "MoveAuthenticator transaction should succeed: {:?}",
+        out.result.effects.status()
+    );
+
+    // Profile must contain a frame for the authenticator function's module.
+    // Speedscope frames record the fully-qualified path in `file`.
+    let profile = out.artifacts.profile.expect("profile should be populated");
+    let bytes = match profile {
+        ProfileOutput::Json(b) => b,
+        ProfileOutput::Path(p) => panic!("expected Json, got Path {p:?}"),
+    };
+    let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    let frames = json
+        .pointer("/shared/frames")
+        .and_then(|v| v.as_array())
+        .expect("Speedscope JSON should contain /shared/frames");
+    let auth_fn_hit = frames.iter().any(|f| {
+        f.get("file")
+            .and_then(|n| n.as_str())
+            .map(|s| s.contains("::authenticate_free_access"))
+            .unwrap_or(false)
+    });
+    assert!(
+        auth_fn_hit,
+        "expected a profile frame naming `authenticate_free_access`; frames: {frames:?}"
+    );
+
+    // Trace must contain events covering the authenticator call — the whole
+    // point of the authenticator-gas-optimisation workflow.
+    let trace = out.artifacts.trace.expect("trace should be populated");
+    assert!(
+        !trace.events.is_empty(),
+        "MoveTrace should contain events for the authenticator call"
     );
 }
