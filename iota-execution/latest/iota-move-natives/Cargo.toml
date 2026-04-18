@@ -29,5 +29,11 @@ move-stdlib-natives = { path = "../../../external-crates/move/crates/move-stdlib
 move-vm-runtime = { path = "../../../external-crates/move/crates/move-vm-runtime" }
 move-vm-types = { path = "../../../external-crates/move/crates/move-vm-types" }
 
+[features]
+# Enable actual `debug::print` / `debug::print_stack_trace` output. Without
+# this feature the natives are no-ops even when `silent=false`. Meant for
+# local debugging (e.g. `iota-local-executor`), not for node builds.
+debug-print = ["move-stdlib-natives/testing"]
+
 [lints]
 workspace = true

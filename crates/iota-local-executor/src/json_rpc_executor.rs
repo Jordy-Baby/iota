@@ -16,6 +16,7 @@ use iota_types::{
 };
 
 use crate::{
+    DebugConfig, DebugSimulateResult,
     caching_store::{JsonRpcFetcher, JsonRpcStore},
     execution::{self, ExecutionEnv, collect_all_object_ids, split_transaction_refs},
 };
@@ -49,6 +50,13 @@ impl JsonRpcExecutor {
     /// endpoint. Uses [`ObjectFetchMode::UseTransactionVersions`] by
     /// default.
     pub async fn new(client: IotaClient) -> Result<Self> {
+        Self::with_debug(client, DebugConfig::default()).await
+    }
+
+    /// Create a new `JsonRpcExecutor` with a custom [`DebugConfig`] for
+    /// debug-print capture, gas profiling, and/or execution tracing. See
+    /// `docs/LOCAL_DEBUGGING.md`.
+    pub async fn with_debug(client: IotaClient, debug_config: DebugConfig) -> Result<Self> {
         let reference_gas_price = client.read_api().get_reference_gas_price().await?;
 
         let protocol_config_response = client.read_api().get_protocol_config(None).await?;
@@ -63,11 +71,12 @@ impl JsonRpcExecutor {
             .get_checkpoint(latest_checkpoint.into())
             .await?;
 
-        let env = ExecutionEnv::new(
+        let env = ExecutionEnv::with_debug(
             protocol_version,
             reference_gas_price,
             checkpoint.epoch,
             checkpoint.timestamp_ms,
+            debug_config,
         )?;
 
         Ok(Self {
@@ -109,6 +118,42 @@ impl JsonRpcExecutor {
         execution::simulate(&self.env, &store, transaction, checks)
     }
 
+    /// Return the underlying store so local packages can be installed as
+    /// overrides via `LocalPackage::install_into_caching`.
+    pub fn new_store(&self) -> JsonRpcStore {
+        JsonRpcStore::new(JsonRpcFetcher(self.client.clone()))
+    }
+
+    /// Simulate a transaction and return the captured [`DebugArtifacts`]
+    /// alongside the result. With a default [`DebugConfig`] the artifacts are
+    /// empty and this is equivalent to [`Self::simulate_transaction`].
+    pub async fn simulate_transaction_with_debug(
+        &self,
+        transaction: TransactionData,
+        checks: VmChecks,
+    ) -> Result<DebugSimulateResult> {
+        self.simulate_transaction_with_debug_using(
+            JsonRpcStore::new(JsonRpcFetcher(self.client.clone())),
+            transaction,
+            checks,
+        )
+        .await
+    }
+
+    /// Variant of [`Self::simulate_transaction_with_debug`] that reuses a
+    /// caller-supplied store — lets the caller pre-install a
+    /// [`LocalPackage`](crate::LocalPackage) via `install_into_caching` before
+    /// simulating.
+    pub async fn simulate_transaction_with_debug_using(
+        &self,
+        store: JsonRpcStore,
+        transaction: TransactionData,
+        checks: VmChecks,
+    ) -> Result<DebugSimulateResult> {
+        self.prefetch_objects(&store, &transaction).await?;
+        execution::simulate_with_debug(&self.env, &store, transaction, checks)
+    }
+
     /// Simulate a **signed** transaction locally, verifying signatures first.
     ///
     /// This works exactly like
@@ -131,6 +176,33 @@ impl JsonRpcExecutor {
         self.prefetch_objects(&store, signed_data.transaction_data())
             .await?;
         execution::simulate_signed(&self.env, &store, signed_data, checks)
+    }
+
+    /// Signed-transaction variant of [`Self::simulate_transaction_with_debug`].
+    pub async fn simulate_signed_transaction_with_debug(
+        &self,
+        signed_data: SenderSignedData,
+        checks: VmChecks,
+    ) -> Result<DebugSimulateResult> {
+        self.simulate_signed_transaction_with_debug_using(
+            JsonRpcStore::new(JsonRpcFetcher(self.client.clone())),
+            signed_data,
+            checks,
+        )
+        .await
+    }
+
+    /// Variant of [`Self::simulate_signed_transaction_with_debug`] that reuses
+    /// a caller-supplied store.
+    pub async fn simulate_signed_transaction_with_debug_using(
+        &self,
+        store: JsonRpcStore,
+        signed_data: SenderSignedData,
+        checks: VmChecks,
+    ) -> Result<DebugSimulateResult> {
+        self.prefetch_objects(&store, signed_data.transaction_data())
+            .await?;
+        execution::simulate_signed_with_debug(&self.env, &store, signed_data, checks)
     }
 
     /// Fetch all objects referenced by the transaction from the remote node.

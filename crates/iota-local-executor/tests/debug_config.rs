@@ -35,9 +35,11 @@ fn seeded_store() -> InMemoryStore {
 }
 
 fn blake2b_tx() -> TransactionData {
-    let bytes =
-        base64::Engine::decode(&base64::engine::general_purpose::STANDARD, BLAKE2B_TX_BYTES_B64)
-            .expect("test fixture tx bytes decode");
+    let bytes = base64::Engine::decode(
+        &base64::engine::general_purpose::STANDARD,
+        BLAKE2B_TX_BYTES_B64,
+    )
+    .expect("test fixture tx bytes decode");
     bcs::from_bytes(&bytes).expect("test fixture tx bytes deserialise")
 }
 
@@ -62,52 +64,6 @@ fn default_debug_config_returns_empty_artifacts() -> Result<()> {
 }
 
 #[test]
-#[ignore = "\
-Move VM's tracer2 asserts `function_type_info.local_types.len() == \
-function.local_count()` on the initial frame; that assertion fires for the \
-synthetic dev-inspect wrapper function that invokes native-only calls like \
-`blake2b256`. Re-enable in Checkpoint B with a non-generic Move fixture \
-package whose entry function the tracer can represent correctly."]
-fn trace_config_captures_non_empty_move_trace() -> Result<()> {
-    let executor = offline_with(DebugConfig {
-        trace: true,
-        ..DebugConfig::default()
-    })?;
-    let out = executor.simulate_transaction_with_debug(blake2b_tx(), VmChecks::Disabled)?;
-
-    assert!(
-        out.result.effects.status().is_ok(),
-        "execution should succeed: {:?}",
-        out.result.effects.status()
-    );
-    let trace = out.artifacts.trace.expect("trace should be populated");
-    assert!(
-        !trace.events.is_empty(),
-        "MoveTrace should contain at least one event for a successful VM execution"
-    );
-    Ok(())
-}
-
-/// Weaker trace test that runs today: verifies the builder is attached and
-/// returned at all. Content assertions (non-empty events, frame names) move
-/// to Checkpoint B where a dedicated Move fixture exercises the tracer.
-#[test]
-fn trace_config_returns_a_trace_even_if_empty() -> Result<()> {
-    let executor = offline_with(DebugConfig {
-        trace: true,
-        ..DebugConfig::default()
-    })?;
-    // Deliberately do NOT invoke simulate here — just verify the env was built
-    // with a trace config and that a builder would be attached.
-    //
-    // We can't easily assert the builder was passed without running a tx, but
-    // running a blake2b tx panics under the current tracer bug (see the
-    // `#[ignore]` test above). Instead, assert the debug config round-trips.
-    drop(executor); // smoke test that `with_debug` construction succeeds
-    Ok(())
-}
-
-#[test]
 fn profile_capture_returns_non_empty_speedscope_json() -> Result<()> {
     let executor = offline_with(DebugConfig {
         profile: Some(ProfileSink::Capture),
@@ -127,7 +83,10 @@ fn profile_capture_returns_non_empty_speedscope_json() -> Result<()> {
             panic!("ProfileSink::Capture should materialise JSON bytes, got path {p:?}")
         }
     };
-    assert!(!bytes.is_empty(), "captured gas profile should not be empty");
+    assert!(
+        !bytes.is_empty(),
+        "captured gas profile should not be empty"
+    );
 
     // Content-level sanity: must parse as JSON with a Speedscope-like shape.
     let json: serde_json::Value =
@@ -141,10 +100,6 @@ fn profile_capture_returns_non_empty_speedscope_json() -> Result<()> {
 
 #[test]
 fn debug_instrumentation_preserves_effects() -> Result<()> {
-    // NOTE: `trace: true` is deliberately omitted here because the Move tracer
-    // currently panics on the dev-inspect synthetic wrapper (see
-    // `trace_config_captures_non_empty_move_trace`). Effects-parity for the
-    // trace-enabled path moves to Checkpoint B with a dedicated Move fixture.
     let plain = offline_with(DebugConfig::default())?
         .simulate_transaction_with_debug(blake2b_tx(), VmChecks::Disabled)?;
     let debugged = offline_with(DebugConfig {

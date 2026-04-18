@@ -25,6 +25,7 @@ Because the authenticator's Move call is metered and traced identically to regul
 **Current state.** The Move VM executor is created with `silent=true` at [execution.rs:66](../src/execution.rs#L66), which replaces `debug::print` / `debug::print_stack_trace` native functions with no-ops. The actual print logic is behind a `testing` feature gate in `move-stdlib-natives`.
 
 **What changes.**
+
 - `ExecutionEnv` gains a `debug_config: DebugConfig` field; `DebugConfig::capture_debug_prints` flips the `silent` argument on `iota_execution::executor(...)`.
 - Each executor gains `with_debug(DebugConfig)` and `simulate_transaction_with_debug(...)` methods.
 
@@ -39,6 +40,7 @@ Because the authenticator's Move call is metered and traced identically to regul
 **Current state.** `iota_execution::executor()` accepts `enable_profiler: Option<PathBuf>`; when set, the Move VM writes a Speedscope-format JSON gas profile to that path. `iota-local-executor` currently passes `None`.
 
 **What changes.**
+
 - `DebugConfig::profile: Option<ProfileSink>` with `ProfileSink = File(PathBuf) | Capture`. `File` forwards the path straight into `enable_profiler`; `Capture` points the profiler at a temp file and reads the JSON back into `DebugArtifacts::profile` as `ProfileOutput::Json(Vec<u8>)`.
 
 **Output.** A Speedscope JSON profile that can be visualized with `speedscope` or the existing `move-gas-profiler` tool, showing per-instruction gas costs, function call stacks, and hotspots.
@@ -50,6 +52,7 @@ Because the authenticator's Move call is metered and traced identically to regul
 **Current state.** `move-trace-format::MoveTraceBuilder` captures instruction-level execution traces; `Executor::execute_transaction_to_effects` and `authenticate_then_execute_transaction_to_effects` both accept `trace_builder_opt: &mut Option<MoveTraceBuilder>`, but `Executor::dev_inspect_transaction` does not. The local executor only uses `dev_inspect_transaction` for the non-authenticator path, and hardcodes `&mut None` on the authenticator path at [execution.rs:352](../src/execution.rs#L352).
 
 **What changes.**
+
 - Extend `Executor::dev_inspect_transaction` upstream to take `trace_builder_opt: &mut Option<MoveTraceBuilder>`. Small, additive.
 - Rewire the hardcoded `&mut None` in `execute_with_move_authenticator` to thread the caller-supplied trace builder.
 - `DebugConfig::trace = true` constructs a fresh `MoveTraceBuilder` per simulation and returns the resulting `MoveTrace` in `DebugArtifacts::trace`.

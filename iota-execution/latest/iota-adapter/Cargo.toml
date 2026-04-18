@@ -44,3 +44,6 @@ tracing = [
   "move-vm-profiler/tracing",
   "move-vm-runtime/tracing",
 ]
+# Enable Move `debug::print` output — forwards to `move-stdlib-natives/testing`.
+# Meant for local debugging (e.g. `iota-local-executor`), not for node builds.
+debug-print = ["iota-move-natives/debug-print"]

@@ -15,6 +15,7 @@ use iota_types::{
 };
 
 use crate::{
+    DebugConfig, DebugSimulateResult,
     caching_store::{GrpcFetcher, GrpcStore},
     execution::{self, ExecutionEnv, collect_all_object_ids, split_transaction_refs},
     json_rpc_executor::ObjectFetchMode,
@@ -31,6 +32,12 @@ pub struct GrpcExecutor {
 impl GrpcExecutor {
     /// Create a new `GrpcExecutor` connected to the given gRPC endpoint.
     pub async fn new(client: GrpcClient) -> Result<Self> {
+        Self::with_debug(client, DebugConfig::default()).await
+    }
+
+    /// Create a new `GrpcExecutor` with a custom [`DebugConfig`] for
+    /// debug-print capture, gas profiling, and/or execution tracing.
+    pub async fn with_debug(client: GrpcClient, debug_config: DebugConfig) -> Result<Self> {
         let epoch = client
             .get_epoch(
                 None,
@@ -54,11 +61,12 @@ impl GrpcExecutor {
             .and_then(|pc| pc.version())
             .map_err(|e| anyhow::anyhow!("missing protocol version: {e}"))?;
 
-        let env = ExecutionEnv::new(
+        let env = ExecutionEnv::with_debug(
             ProtocolVersion::new(protocol_version),
             reference_gas_price,
             epoch_id,
             epoch_timestamp_ms,
+            debug_config,
         )?;
 
         Ok(Self {
@@ -93,6 +101,37 @@ impl GrpcExecutor {
         execution::simulate(&self.env, &store, transaction, checks)
     }
 
+    /// Create a fresh [`GrpcStore`] sharing this executor's gRPC client.
+    /// Lets callers pre-install a [`LocalPackage`](crate::LocalPackage) via
+    /// `install_into_caching` before calling
+    /// [`Self::simulate_transaction_with_debug_using`].
+    pub fn new_store(&self) -> GrpcStore {
+        GrpcStore::new(GrpcFetcher(self.client.clone()))
+    }
+
+    /// Simulate a transaction and return the captured [`DebugArtifacts`]
+    /// alongside the result.
+    pub async fn simulate_transaction_with_debug(
+        &self,
+        transaction: TransactionData,
+        checks: VmChecks,
+    ) -> Result<DebugSimulateResult> {
+        self.simulate_transaction_with_debug_using(self.new_store(), transaction, checks)
+            .await
+    }
+
+    /// Variant of [`Self::simulate_transaction_with_debug`] that reuses a
+    /// caller-supplied store.
+    pub async fn simulate_transaction_with_debug_using(
+        &self,
+        store: GrpcStore,
+        transaction: TransactionData,
+        checks: VmChecks,
+    ) -> Result<DebugSimulateResult> {
+        self.prefetch_objects(&store, &transaction).await?;
+        execution::simulate_with_debug(&self.env, &store, transaction, checks)
+    }
+
     /// Simulate a **signed** transaction locally, verifying signatures first.
     ///
     /// For standard schemes (Ed25519, Secp256k1, Secp256r1, MultiSig) the
@@ -109,6 +148,29 @@ impl GrpcExecutor {
         self.prefetch_objects(&store, signed_data.transaction_data())
             .await?;
         execution::simulate_signed(&self.env, &store, signed_data, checks)
+    }
+
+    /// Signed-transaction variant of [`Self::simulate_transaction_with_debug`].
+    pub async fn simulate_signed_transaction_with_debug(
+        &self,
+        signed_data: SenderSignedData,
+        checks: VmChecks,
+    ) -> Result<DebugSimulateResult> {
+        self.simulate_signed_transaction_with_debug_using(self.new_store(), signed_data, checks)
+            .await
+    }
+
+    /// Variant of [`Self::simulate_signed_transaction_with_debug`] that reuses
+    /// a caller-supplied store.
+    pub async fn simulate_signed_transaction_with_debug_using(
+        &self,
+        store: GrpcStore,
+        signed_data: SenderSignedData,
+        checks: VmChecks,
+    ) -> Result<DebugSimulateResult> {
+        self.prefetch_objects(&store, signed_data.transaction_data())
+            .await?;
+        execution::simulate_signed_with_debug(&self.env, &store, signed_data, checks)
     }
 
     /// Fetch all objects referenced by the transaction via gRPC.

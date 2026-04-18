@@ -20,6 +20,7 @@ mod graphql_executor;
 mod grpc_executor;
 mod in_memory_store;
 mod json_rpc_executor;
+mod local_package;
 mod offline_executor;
 
 pub use caching_store::{GraphqlStore, GrpcStore, JsonRpcStore};
@@ -29,4 +30,5 @@ pub use grpc_executor::GrpcExecutor;
 pub use in_memory_store::InMemoryStore;
 pub use iota_types::{transaction::SenderSignedData, transaction_executor::VmChecks};
 pub use json_rpc_executor::{JsonRpcExecutor, ObjectFetchMode};
+pub use local_package::LocalPackage;
 pub use offline_executor::OfflineExecutor;

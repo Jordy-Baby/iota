@@ -1,0 +1,13 @@
+[package]
+name = "HelloDebug"
+version = "0.0.1"
+edition = "2024"
+
+[dependencies]
+Iota = { local = "../../../../iota-framework/packages/iota-framework" }
+
+[addresses]
+# Unbound so `additional_named_addresses` (supplied by `LocalPackage::compile`)
+# can provide the synthetic ID at build time without a conflict.
+hello = "_"
+iota = "0x2"

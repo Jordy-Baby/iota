@@ -39,6 +39,12 @@ tracing = [
   # "iota-adapter-$CUT/tracing",
   # "move-vm-runtime-$CUT/tracing",
 ]
+# Enable Move `debug::print` output — forwards through the native-function
+# chain to `move-stdlib-natives/testing`. Meant for local debugging only.
+debug-print = [
+  "iota-adapter-latest/debug-print",
+  "iota-move-natives-latest/debug-print",
+]
 
 [lints]
 workspace = true

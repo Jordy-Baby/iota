@@ -15,6 +15,7 @@ use iota_types::{
 };
 
 use crate::{
+    DebugConfig, DebugSimulateResult,
     caching_store::{GraphqlFetcher, GraphqlStore},
     execution::{self, ExecutionEnv, collect_all_object_ids, split_transaction_refs},
     json_rpc_executor::ObjectFetchMode,
@@ -31,6 +32,12 @@ pub struct GraphqlExecutor {
 impl GraphqlExecutor {
     /// Create a new `GraphqlExecutor` connected to the given GraphQL endpoint.
     pub async fn new(client: SimpleClient) -> Result<Self> {
+        Self::with_debug(client, DebugConfig::default()).await
+    }
+
+    /// Create a new `GraphqlExecutor` with a custom [`DebugConfig`] for
+    /// debug-print capture, gas profiling, and/or execution tracing.
+    pub async fn with_debug(client: SimpleClient, debug_config: DebugConfig) -> Result<Self> {
         let query = r#"{
             epoch {
                 epochId
@@ -76,11 +83,12 @@ impl GraphqlExecutor {
             .and_then(|v| v.as_u64())
             .ok_or_else(|| anyhow::anyhow!("missing protocolVersion"))?;
 
-        let env = ExecutionEnv::new(
+        let env = ExecutionEnv::with_debug(
             ProtocolVersion::new(protocol_version),
             reference_gas_price,
             epoch_id,
             epoch_timestamp_ms,
+            debug_config,
         )?;
 
         Ok(Self {
@@ -115,6 +123,36 @@ impl GraphqlExecutor {
         execution::simulate(&self.env, &store, transaction, checks)
     }
 
+    /// Create a fresh [`GraphqlStore`] sharing this executor's GraphQL
+    /// client — lets callers pre-install a
+    /// [`LocalPackage`](crate::LocalPackage) before simulating.
+    pub fn new_store(&self) -> GraphqlStore {
+        GraphqlStore::new(GraphqlFetcher(self.client.clone()))
+    }
+
+    /// Simulate a transaction and return the captured [`DebugArtifacts`]
+    /// alongside the result.
+    pub async fn simulate_transaction_with_debug(
+        &self,
+        transaction: TransactionData,
+        checks: VmChecks,
+    ) -> Result<DebugSimulateResult> {
+        self.simulate_transaction_with_debug_using(self.new_store(), transaction, checks)
+            .await
+    }
+
+    /// Variant of [`Self::simulate_transaction_with_debug`] that reuses a
+    /// caller-supplied store.
+    pub async fn simulate_transaction_with_debug_using(
+        &self,
+        store: GraphqlStore,
+        transaction: TransactionData,
+        checks: VmChecks,
+    ) -> Result<DebugSimulateResult> {
+        self.prefetch_objects(&store, &transaction).await?;
+        execution::simulate_with_debug(&self.env, &store, transaction, checks)
+    }
+
     /// Simulate a **signed** transaction locally, verifying signatures first.
     ///
     /// For standard schemes (Ed25519, Secp256k1, Secp256r1, MultiSig) the
@@ -131,6 +169,29 @@ impl GraphqlExecutor {
         self.prefetch_objects(&store, signed_data.transaction_data())
             .await?;
         execution::simulate_signed(&self.env, &store, signed_data, checks)
+    }
+
+    /// Signed-transaction variant of [`Self::simulate_transaction_with_debug`].
+    pub async fn simulate_signed_transaction_with_debug(
+        &self,
+        signed_data: SenderSignedData,
+        checks: VmChecks,
+    ) -> Result<DebugSimulateResult> {
+        self.simulate_signed_transaction_with_debug_using(self.new_store(), signed_data, checks)
+            .await
+    }
+
+    /// Variant of [`Self::simulate_signed_transaction_with_debug`] that reuses
+    /// a caller-supplied store.
+    pub async fn simulate_signed_transaction_with_debug_using(
+        &self,
+        store: GraphqlStore,
+        signed_data: SenderSignedData,
+        checks: VmChecks,
+    ) -> Result<DebugSimulateResult> {
+        self.prefetch_objects(&store, signed_data.transaction_data())
+            .await?;
+        execution::simulate_signed_with_debug(&self.env, &store, signed_data, checks)
     }
 
     /// Fetch all objects referenced by the transaction via GraphQL.

@@ -15,7 +15,6 @@ use iota_config::{
 };
 use iota_execution::Executor;
 use iota_protocol_config::{Chain, ProtocolConfig, ProtocolVersion};
-use move_trace_format::format::MoveTraceBuilder;
 use iota_types::{
     account_abstraction::{
         account::AuthenticatorFunctionRefV1Key,
@@ -42,6 +41,7 @@ use iota_types::{
     },
     transaction_executor::{SimulateTransactionResult, VmChecks},
 };
+use move_trace_format::format::MoveTraceBuilder;
 
 use crate::debug::{DebugArtifacts, DebugConfig, DebugSimulateResult, ProfileOutput, ProfileSink};
 
@@ -62,21 +62,6 @@ pub(crate) struct ExecutionEnv {
 }
 
 impl ExecutionEnv {
-    pub(crate) fn new(
-        protocol_version: ProtocolVersion,
-        reference_gas_price: u64,
-        epoch_id: u64,
-        epoch_timestamp_ms: u64,
-    ) -> Result<Self> {
-        Self::with_debug(
-            protocol_version,
-            reference_gas_price,
-            epoch_id,
-            epoch_timestamp_ms,
-            DebugConfig::default(),
-        )
-    }
-
     pub(crate) fn with_debug(
         protocol_version: ProtocolVersion,
         reference_gas_price: u64,
@@ -260,13 +245,9 @@ pub(crate) fn simulate_signed_with_debug(
     let mut trace_builder = env.trace_enabled().then(MoveTraceBuilder::new);
 
     let result = match move_authenticator {
-        Some(authenticator) => execute_with_move_authenticator(
-            env,
-            store,
-            prepared,
-            authenticator,
-            &mut trace_builder,
-        ),
+        Some(authenticator) => {
+            execute_with_move_authenticator(env, store, prepared, authenticator, &mut trace_builder)
+        }
         None => execute_prepared(env, store, prepared, checks, &mut trace_builder),
     }?;
     let artifacts = env.collect_artifacts(trace_builder);
