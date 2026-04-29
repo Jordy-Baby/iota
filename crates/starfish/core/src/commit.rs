@@ -820,9 +820,18 @@ pub(crate) enum Decision {
 }
 
 /// The status of a leader slot from the direct and indirect commit rules.
+///
+/// `Commit(_, Some(Optimistic), strong_voters)` carries the r+1 authorities
+/// whose strong votes attest data availability for the leader and its
+/// acknowledgments; the linearizer feeds them to the per-ref ack tracker.
+/// Empty for every other case.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum LeaderStatus {
-    Commit(VerifiedBlockHeader, Option<CommitMetastate>),
+    Commit(
+        VerifiedBlockHeader,
+        Option<CommitMetastate>,
+        Vec<AuthorityIndex>,
+    ),
     Skip(Slot),
     Undecided(Slot),
 }
@@ -830,7 +839,7 @@ pub(crate) enum LeaderStatus {
 impl LeaderStatus {
     pub(crate) fn round(&self) -> Round {
         match self {
-            Self::Commit(block, _) => block.round(),
+            Self::Commit(block, _, _) => block.round(),
             Self::Skip(leader) => leader.round,
             Self::Undecided(leader) => leader.round,
         }
@@ -839,7 +848,7 @@ impl LeaderStatus {
     /// Slot of the leader this status refers to.
     pub(crate) fn slot(&self) -> Slot {
         match self {
-            Self::Commit(block, _) => block.reference().into(),
+            Self::Commit(block, _, _) => block.reference().into(),
             Self::Skip(leader) | Self::Undecided(leader) => *leader,
         }
     }
@@ -848,7 +857,7 @@ impl LeaderStatus {
     /// and `Undecided` are non-final.
     pub(crate) fn is_final(&self) -> bool {
         match self {
-            Self::Commit(_, Some(CommitMetastate::Pending)) => false,
+            Self::Commit(_, Some(CommitMetastate::Pending), _) => false,
             Self::Commit(..) | Self::Skip(_) => true,
             Self::Undecided(_) => false,
         }
@@ -856,7 +865,9 @@ impl LeaderStatus {
 
     pub(crate) fn into_decided_leader(self) -> Option<DecidedLeader> {
         match self {
-            Self::Commit(block, metastate) => Some(DecidedLeader::Commit(block, metastate)),
+            Self::Commit(block, metastate, strong_voters) => {
+                Some(DecidedLeader::Commit(block, metastate, strong_voters))
+            }
             Self::Skip(slot) => Some(DecidedLeader::Skip(slot)),
             Self::Undecided(..) => None,
         }
@@ -866,8 +877,8 @@ impl LeaderStatus {
 impl Display for LeaderStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Commit(block, None) => write!(f, "Commit({})", block.reference()),
-            Self::Commit(block, Some(metastate)) => {
+            Self::Commit(block, None, _) => write!(f, "Commit({})", block.reference()),
+            Self::Commit(block, Some(metastate), _) => {
                 write!(f, "Commit({},{metastate})", block.reference())
             }
             Self::Skip(slot) => write!(f, "Skip({slot})"),
@@ -879,7 +890,11 @@ impl Display for LeaderStatus {
 /// Decision of each leader slot.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum DecidedLeader {
-    Commit(VerifiedBlockHeader, Option<CommitMetastate>),
+    Commit(
+        VerifiedBlockHeader,
+        Option<CommitMetastate>,
+        Vec<AuthorityIndex>,
+    ),
     Skip(Slot),
 }
 
@@ -887,16 +902,24 @@ impl DecidedLeader {
     // Slot where the leader is decided.
     pub(crate) fn slot(&self) -> Slot {
         match self {
-            Self::Commit(block, _) => block.reference().into(),
+            Self::Commit(block, _, _) => block.reference().into(),
             Self::Skip(slot) => *slot,
         }
     }
 
-    // Converts to committed block if the decision is to commit. Returns None
-    // otherwise.
-    pub(crate) fn into_committed_block(self) -> Option<VerifiedBlockHeader> {
+    // Converts a Commit decision into the committed block, metastate, and
+    // strong-voter authority set. Returns None for Skip.
+    pub(crate) fn into_committed_block(
+        self,
+    ) -> Option<(
+        VerifiedBlockHeader,
+        Option<CommitMetastate>,
+        Vec<AuthorityIndex>,
+    )> {
         match self {
-            Self::Commit(block, _) => Some(block),
+            Self::Commit(block, metastate, strong_voters) => {
+                Some((block, metastate, strong_voters))
+            }
             Self::Skip(_) => None,
         }
     }
@@ -904,7 +927,7 @@ impl DecidedLeader {
     #[cfg(test)]
     pub(crate) fn round(&self) -> Round {
         match self {
-            Self::Commit(block, _) => block.round(),
+            Self::Commit(block, _, _) => block.round(),
             Self::Skip(leader) => leader.round,
         }
     }
@@ -912,7 +935,7 @@ impl DecidedLeader {
     #[cfg(test)]
     pub(crate) fn authority(&self) -> AuthorityIndex {
         match self {
-            Self::Commit(block, _) => block.author(),
+            Self::Commit(block, _, _) => block.author(),
             Self::Skip(leader) => leader.authority,
         }
     }
@@ -921,8 +944,8 @@ impl DecidedLeader {
 impl Display for DecidedLeader {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Commit(block, None) => write!(f, "Commit({})", block.reference()),
-            Self::Commit(block, Some(metastate)) => {
+            Self::Commit(block, None, _) => write!(f, "Commit({})", block.reference()),
+            Self::Commit(block, Some(metastate), _) => {
                 write!(f, "Commit({},{metastate})", block.reference())
             }
             Self::Skip(slot) => write!(f, "Skip({slot})"),
@@ -953,6 +976,19 @@ impl Display for CommitMetastate {
             Self::Pending => write!(f, "pending"),
         }
     }
+}
+
+/// Test helper: pair each leader with `None` metastate and an empty
+/// strong-voter set.
+#[cfg(test)]
+pub(crate) fn with_no_metastate(
+    blocks: Vec<VerifiedBlockHeader>,
+) -> Vec<(
+    VerifiedBlockHeader,
+    Option<CommitMetastate>,
+    Vec<AuthorityIndex>,
+)> {
+    blocks.into_iter().map(|b| (b, None, Vec::new())).collect()
 }
 
 /// Per-commit properties that can be regenerated from past values, and do not
