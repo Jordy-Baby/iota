@@ -54,7 +54,7 @@ async fn main() -> Result<()> {
     }
     println!("  Gas coins ({}):", transaction.gas().len());
     for gas_ref in transaction.gas() {
-        println!("    - {}  v{}", gas_ref.0, gas_ref.1.value());
+        println!("    - {}  v{}", gas_ref.object_id, gas_ref.version.as_u64());
     }
 
     // Execute locally — objects are fetched from devnet, but execution is local
@@ -76,7 +76,7 @@ async fn main() -> Result<()> {
     if let Some(ref events) = result.events {
         println!("  Events: {}", events.data.len());
         for event in &events.data {
-            println!("    - {}::{}", event.type_.module, event.type_.name);
+            println!("    - {}::{}", event.type_.module(), event.type_.name());
         }
     }
     if let Ok(ref results) = result.execution_result {

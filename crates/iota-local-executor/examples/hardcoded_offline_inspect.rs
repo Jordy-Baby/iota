@@ -124,7 +124,7 @@ fn main() -> Result<()> {
     if let Some(ref events) = result.events {
         println!("  Events: {}", events.data.len());
         for event in &events.data {
-            println!("    - {}::{}", event.type_.module, event.type_.name);
+            println!("    - {}::{}", event.type_.module(), event.type_.name());
         }
     }
     if let Ok(ref results) = result.execution_result {

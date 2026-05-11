@@ -12,12 +12,14 @@ use iota_local_executor::{
 };
 use iota_protocol_config::{Chain, ProtocolConfig, ProtocolVersion};
 use iota_types::{
-    base_types::ObjectID,
+    base_types::{Identifier, ObjectID},
     effects::TransactionEffectsAPI,
     programmable_transaction_builder::ProgrammableTransactionBuilder,
-    transaction::{TEST_ONLY_GAS_UNIT_FOR_HEAVY_COMPUTATION_STORAGE, TransactionData},
+    transaction::{
+        TEST_ONLY_GAS_UNIT_FOR_HEAVY_COMPUTATION_STORAGE, TransactionData, TransactionDataAPI,
+    },
 };
-use move_core_types::{account_address::AccountAddress, ident_str};
+use move_core_types::account_address::AccountAddress;
 
 /// Path on disk to the `hello_debug` fixture Move package.
 fn fixture_path() -> PathBuf {
@@ -32,7 +34,7 @@ fn protocol_config() -> ProtocolConfig {
 
 /// The synthetic package ID we use across this test file.
 fn synthetic_id() -> ObjectID {
-    ObjectID::from_hex_literal("0x42").expect("static hex literal parses")
+    ObjectID::from_short_hex("0x42").expect("static hex literal parses")
 }
 
 /// With `capture_debug_prints + structured_debug_capture`, the fixture's
@@ -66,8 +68,8 @@ fn greet_debug_prints_captured_into_artifacts() -> Result<()> {
     let mut builder = ProgrammableTransactionBuilder::new();
     builder.programmable_move_call(
         synthetic_id(),
-        ident_str!("hello").into(),
-        ident_str!("greet").into(),
+        Identifier::from_static("hello"),
+        Identifier::from_static("greet"),
         vec![],
         vec![],
     );
@@ -81,7 +83,7 @@ fn greet_debug_prints_captured_into_artifacts() -> Result<()> {
 
     let out = executor.simulate_transaction_with_debug(tx, VmChecks::Disabled)?;
     assert!(
-        out.result.effects.status().is_ok(),
+        out.result.effects.status().is_success(),
         "execution should succeed: {:?}",
         out.result.effects.status()
     );
@@ -113,7 +115,7 @@ fn compile_binds_synthetic_id_into_every_module() -> Result<()> {
     assert_eq!(pkg.id, synthetic_id());
     assert_eq!(pkg.object.id(), synthetic_id());
 
-    let expected = AccountAddress::from(synthetic_id());
+    let expected = AccountAddress::new(synthetic_id().into_bytes());
     let modules: Vec<_> = pkg.compiled.get_modules().collect();
     assert!(!modules.is_empty(), "fixture package must have >0 modules");
     for m in modules {
@@ -170,8 +172,8 @@ fn ptb_call_against_synthetic_package_succeeds() -> Result<()> {
     let n_arg = builder.pure(10u64)?;
     builder.programmable_move_call(
         synthetic_id(),
-        ident_str!("hello").into(),
-        ident_str!("sum_to").into(),
+        Identifier::from_static("hello"),
+        Identifier::from_static("sum_to"),
         vec![],
         vec![n_arg],
     );
@@ -190,7 +192,7 @@ fn ptb_call_against_synthetic_package_succeeds() -> Result<()> {
 
     let out = executor.simulate_transaction_with_debug(tx, VmChecks::Disabled)?;
     assert!(
-        out.result.effects.status().is_ok(),
+        out.result.effects.status().is_success(),
         "dev-inspect of synthetic-package PTB should succeed: {:?}",
         out.result.effects.status()
     );
@@ -229,8 +231,8 @@ fn trace_captures_events_for_fixture_call() -> Result<()> {
     let n_arg = builder.pure(5u64)?;
     builder.programmable_move_call(
         synthetic_id(),
-        ident_str!("hello").into(),
-        ident_str!("sum_to").into(),
+        Identifier::from_static("hello"),
+        Identifier::from_static("sum_to"),
         vec![],
         vec![n_arg],
     );
@@ -246,7 +248,7 @@ fn trace_captures_events_for_fixture_call() -> Result<()> {
 
     let out = executor.simulate_transaction_with_debug(tx, VmChecks::Disabled)?;
     assert!(
-        out.result.effects.status().is_ok(),
+        out.result.effects.status().is_success(),
         "execution should succeed: {:?}",
         out.result.effects.status()
     );
@@ -273,8 +275,8 @@ fn full_debug_config_preserves_effects_on_fixture() -> Result<()> {
         let n_arg = builder.pure(5u64).unwrap();
         builder.programmable_move_call(
             synthetic_id(),
-            ident_str!("hello").into(),
-            ident_str!("sum_to").into(),
+            Identifier::from_static("hello"),
+            Identifier::from_static("sum_to"),
             vec![],
             vec![n_arg],
         );
@@ -353,8 +355,8 @@ fn profile_captures_fixture_module_frame() -> Result<()> {
     let n_arg = builder.pure(50u64)?;
     builder.programmable_move_call(
         synthetic_id(),
-        ident_str!("hello").into(),
-        ident_str!("work").into(),
+        Identifier::from_static("hello"),
+        Identifier::from_static("work"),
         vec![],
         vec![n_arg],
     );
@@ -369,7 +371,7 @@ fn profile_captures_fixture_module_frame() -> Result<()> {
     );
 
     let out = executor.simulate_transaction_with_debug(tx, VmChecks::Disabled)?;
-    assert!(out.result.effects.status().is_ok());
+    assert!(out.result.effects.status().is_success());
 
     let profile = out
         .artifacts

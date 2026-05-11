@@ -15,17 +15,14 @@
 //! [`decode_events`] directly if you already hold a `LayoutResolver`.
 
 use anyhow::{Result, anyhow};
+use iota_sdk_types::{Identifier, StructTag};
 use iota_types::{
     base_types::{IotaAddress, ObjectID},
     effects::TransactionEvents,
     event::Event,
     layout_resolver::LayoutResolver,
 };
-use move_core_types::{
-    annotated_value::{MoveDatatypeLayout, MoveValue},
-    identifier::Identifier,
-    language_storage::StructTag,
-};
+use move_core_types::annotated_value::{MoveDatatypeLayout, MoveValue};
 
 /// One decoded Move event.
 #[derive(Debug)]
@@ -78,7 +75,7 @@ fn decode_one(event: &Event, resolver: &mut dyn LayoutResolver) -> Result<Decode
     };
     Ok(DecodedEvent {
         package_id: event.package_id,
-        transaction_module: event.transaction_module.clone(),
+        transaction_module: event.module.clone(),
         sender: event.sender,
         type_: event.type_.clone(),
         value,

@@ -243,7 +243,7 @@ impl GraphqlExecutor {
         for (i, (id, version)) in versioned.iter().enumerate() {
             aliases.push(format!(
                 r#"v{i}: object(address: "{id}", version: {}) {{ bcs }}"#,
-                version.value()
+                version.as_u64()
             ));
         }
         for (i, id) in latest.iter().enumerate() {

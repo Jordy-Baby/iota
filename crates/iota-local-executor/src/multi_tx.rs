@@ -57,11 +57,11 @@ pub fn apply_effects_to_in_memory(store: &mut InMemoryStore, result: &SimulateTr
     // Remove deleted and wrapped objects. Wrapped objects are still
     // reachable on-chain via their wrapper, but they should no longer be
     // looked up by the wrapped ID directly.
-    for (id, _, _) in result.effects.deleted() {
-        store.remove(&id);
+    for objref in result.effects.deleted() {
+        store.remove(&objref.object_id);
     }
-    for (id, _, _) in result.effects.wrapped() {
-        store.remove(&id);
+    for objref in result.effects.wrapped() {
+        store.remove(&objref.object_id);
     }
     // Don't persist the mock gas coin — see module-level note.
     if let Some(id) = result.mock_gas_id {
@@ -78,11 +78,11 @@ pub fn apply_effects_to_caching<F: ObjectFetcher>(
     for obj in result.output_objects.values() {
         store.insert(obj.clone());
     }
-    for (id, _, _) in result.effects.deleted() {
-        store.remove(&id);
+    for objref in result.effects.deleted() {
+        store.remove(&objref.object_id);
     }
-    for (id, _, _) in result.effects.wrapped() {
-        store.remove(&id);
+    for objref in result.effects.wrapped() {
+        store.remove(&objref.object_id);
     }
     if let Some(id) = result.mock_gas_id {
         store.remove(&id);
@@ -107,9 +107,12 @@ impl ChainHistory {
     /// when the caller needs to reference a newly-created object in a later
     /// transaction.
     pub fn created_object_ids(&self) -> impl Iterator<Item = ObjectID> + '_ {
-        self.steps
-            .iter()
-            .flat_map(|effects| effects.created().into_iter().map(|(objref, _)| objref.0))
+        self.steps.iter().flat_map(|effects| {
+            effects
+                .created()
+                .into_iter()
+                .map(|(objref, _)| objref.object_id)
+        })
     }
 }
 

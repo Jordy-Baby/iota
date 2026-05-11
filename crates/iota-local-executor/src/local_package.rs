@@ -76,7 +76,7 @@ impl LocalPackage {
                 "local package at {path:?} compiled to zero modules — check the package layout"
             ));
         }
-        let expected = AccountAddress::from(synthetic_id);
+        let expected = AccountAddress::new(synthetic_id.into_bytes());
         for module in &modules {
             if module.address() != &expected {
                 return Err(anyhow!(
@@ -96,7 +96,7 @@ impl LocalPackage {
         let dependencies: Vec<MovePackage> = BuiltInFramework::genesis_move_packages().collect();
         let object = Object::new_package(
             &modules,
-            TransactionDigest::genesis_marker(),
+            TransactionDigest::ZERO,
             protocol_config,
             &dependencies,
         )

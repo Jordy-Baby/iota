@@ -241,7 +241,7 @@ pub struct GrpcFetcher(pub(crate) GrpcClient);
 impl ObjectFetcher for GrpcFetcher {
     fn fetch_object(&self, id: &ObjectID) -> Option<Object> {
         let client = self.0.clone();
-        let sdk_id: ObjectId = (*id).into();
+        let sdk_id: ObjectId = *id;
 
         let result = tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current()

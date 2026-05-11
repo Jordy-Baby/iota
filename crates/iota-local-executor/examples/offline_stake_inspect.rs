@@ -78,15 +78,15 @@ async fn main() -> Result<()> {
 
     // Add gas payment objects
     for gas_ref in transaction.gas() {
-        if !object_ids.contains(&gas_ref.0) {
-            object_ids.push(gas_ref.0);
+        if !object_ids.contains(&gas_ref.object_id) {
+            object_ids.push(gas_ref.object_id);
         }
     }
 
     // Add receiving objects
     for objref in &transaction.receiving_objects() {
-        if !object_ids.contains(&objref.0) {
-            object_ids.push(objref.0);
+        if !object_ids.contains(&objref.object_id) {
+            object_ids.push(objref.object_id);
         }
     }
 
@@ -113,7 +113,7 @@ async fn main() -> Result<()> {
     for response in responses {
         if let Some(data) = response.data {
             let obj: Object = data.try_into()?;
-            println!("    Fetched {} (v{})", obj.id(), obj.version().value());
+            println!("    Fetched {} (v{})", obj.id(), obj.version().as_u64());
             store.insert(obj);
         }
     }
@@ -155,7 +155,7 @@ async fn main() -> Result<()> {
     if let Some(ref events) = result.events {
         println!("  Events: {}", events.data.len());
         for event in &events.data {
-            println!("    - {}::{}", event.type_.module, event.type_.name);
+            println!("    - {}::{}", event.type_.module(), event.type_.name());
         }
     }
     if let Ok(ref results) = result.execution_result {

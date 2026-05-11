@@ -53,7 +53,7 @@ fn default_debug_config_returns_empty_artifacts() -> Result<()> {
     let out = executor.simulate_transaction_with_debug(blake2b_tx(), VmChecks::Disabled)?;
 
     assert!(
-        out.result.effects.status().is_ok(),
+        out.result.effects.status().is_success(),
         "execution should succeed: {:?}",
         out.result.effects.status()
     );
@@ -72,7 +72,7 @@ fn profile_capture_returns_non_empty_speedscope_json() -> Result<()> {
     let out = executor.simulate_transaction_with_debug(blake2b_tx(), VmChecks::Disabled)?;
 
     assert!(
-        out.result.effects.status().is_ok(),
+        out.result.effects.status().is_success(),
         "execution should succeed: {:?}",
         out.result.effects.status()
     );

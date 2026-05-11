@@ -8,12 +8,13 @@ use iota_framework::BuiltInFramework;
 use iota_local_executor::{InMemoryStore, LocalExecError, OfflineExecutor, VmChecks};
 use iota_protocol_config::ProtocolVersion;
 use iota_types::{
-    base_types::{IotaAddress, ObjectID, SequenceNumber},
+    base_types::{Identifier, IotaAddress, ObjectID, ObjectRef, SequenceNumber},
     digests::ObjectDigest,
     programmable_transaction_builder::ProgrammableTransactionBuilder,
-    transaction::{TEST_ONLY_GAS_UNIT_FOR_HEAVY_COMPUTATION_STORAGE, TransactionData},
+    transaction::{
+        TEST_ONLY_GAS_UNIT_FOR_HEAVY_COMPUTATION_STORAGE, TransactionData, TransactionDataAPI,
+    },
 };
-use move_core_types::ident_str;
 
 fn seeded_offline() -> OfflineExecutor {
     let mut store = InMemoryStore::new();
@@ -27,18 +28,22 @@ fn seeded_offline() -> OfflineExecutor {
 fn validation_failure_tags_error_as_validation() {
     // Build a transaction that references a non-existent package so
     // pre-execution object resolution / validity-check fails.
-    let bogus_pkg = ObjectID::from_hex_literal("0xdead").unwrap();
+    let bogus_pkg = ObjectID::from_short_hex("0xdead").unwrap();
     let mut b = ProgrammableTransactionBuilder::new();
     b.programmable_move_call(
         bogus_pkg,
-        ident_str!("does_not_exist").into(),
-        ident_str!("nope").into(),
+        Identifier::from_static("does_not_exist"),
+        Identifier::from_static("nope"),
         vec![],
         vec![],
     );
     let tx = TransactionData::new_programmable(
         IotaAddress::ZERO,
-        vec![(ObjectID::ZERO, SequenceNumber::from(0), ObjectDigest::MIN)],
+        vec![ObjectRef::new(
+            ObjectID::ZERO,
+            SequenceNumber::from(0),
+            ObjectDigest::MIN,
+        )],
         b.finish(),
         TEST_ONLY_GAS_UNIT_FOR_HEAVY_COMPUTATION_STORAGE,
         1000,

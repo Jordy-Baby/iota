@@ -6,7 +6,7 @@
 
 use anyhow::Result;
 use iota_grpc_client::Client as GrpcClient;
-use iota_sdk_types::ObjectId;
+use iota_sdk_types::{ObjectId, Version};
 use iota_types::{
     object::Object,
     transaction::{SenderSignedData, TransactionData},
@@ -219,8 +219,8 @@ impl GrpcExecutor {
             return Ok(());
         }
 
-        let sdk_refs: Vec<(ObjectId, Option<u64>)> =
-            refs.into_iter().map(|id| (id.into(), None)).collect();
+        let sdk_refs: Vec<(ObjectId, Option<Version>)> =
+            refs.into_iter().map(|id| (id, None)).collect();
 
         self.fetch_and_insert(store, &sdk_refs).await
     }
@@ -236,17 +236,17 @@ impl GrpcExecutor {
 
         // Fetch versioned objects at their exact versions.
         if !versioned.is_empty() {
-            let sdk_refs: Vec<(ObjectId, Option<u64>)> = versioned
+            let sdk_refs: Vec<(ObjectId, Option<Version>)> = versioned
                 .into_iter()
-                .map(|(id, version)| (id.into(), Some(version.value())))
+                .map(|(id, version)| (id, Some(version)))
                 .collect();
             self.fetch_and_insert(store, &sdk_refs).await?;
         }
 
         // Fetch shared objects and packages at the latest version.
         if !latest.is_empty() {
-            let sdk_refs: Vec<(ObjectId, Option<u64>)> =
-                latest.into_iter().map(|id| (id.into(), None)).collect();
+            let sdk_refs: Vec<(ObjectId, Option<Version>)> =
+                latest.into_iter().map(|id| (id, None)).collect();
             self.fetch_and_insert(store, &sdk_refs).await?;
         }
 
@@ -257,7 +257,7 @@ impl GrpcExecutor {
     async fn fetch_and_insert(
         &self,
         store: &GrpcStore,
-        refs: &[(ObjectId, Option<u64>)],
+        refs: &[(ObjectId, Option<Version>)],
     ) -> Result<()> {
         let proto_objects = self
             .client

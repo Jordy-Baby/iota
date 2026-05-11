@@ -12,15 +12,16 @@ use iota_local_executor::{
     apply_effects_to_in_memory,
 };
 use iota_protocol_config::{Chain, ProtocolConfig, ProtocolVersion};
+use iota_sdk_types::SharedObjectReference;
 use iota_types::{
-    base_types::{IotaAddress, ObjectID, SequenceNumber},
+    base_types::{Identifier, IotaAddress, ObjectID, SequenceNumber},
     effects::TransactionEffectsAPI,
     programmable_transaction_builder::ProgrammableTransactionBuilder,
     transaction::{
-        CallArg, ObjectArg, TEST_ONLY_GAS_UNIT_FOR_HEAVY_COMPUTATION_STORAGE, TransactionData,
+        CallArg, TEST_ONLY_GAS_UNIT_FOR_HEAVY_COMPUTATION_STORAGE, TransactionData,
+        TransactionDataAPI,
     },
 };
-use move_core_types::ident_str;
 
 fn fixture_path() -> PathBuf {
     let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -29,7 +30,7 @@ fn fixture_path() -> PathBuf {
 }
 
 fn synthetic_id() -> ObjectID {
-    ObjectID::from_hex_literal("0x42").unwrap()
+    ObjectID::from_short_hex("0x42").unwrap()
 }
 
 fn protocol_config() -> ProtocolConfig {
@@ -55,8 +56,8 @@ fn chain_create_then_increment_counter() -> Result<()> {
     let mut b = ProgrammableTransactionBuilder::new();
     b.programmable_move_call(
         synthetic_id(),
-        ident_str!("counter").into(),
-        ident_str!("create").into(),
+        Identifier::from_static("counter"),
+        Identifier::from_static("create"),
         vec![],
         vec![],
     );
@@ -69,7 +70,7 @@ fn chain_create_then_increment_counter() -> Result<()> {
     );
     let r1 = chain.simulate(tx1, VmChecks::Enabled)?;
     assert!(
-        r1.effects.status().is_ok(),
+        r1.effects.status().is_success(),
         "tx1 create must succeed: {:?}",
         r1.effects.status()
     );
@@ -79,7 +80,7 @@ fn chain_create_then_increment_counter() -> Result<()> {
         .effects
         .created()
         .into_iter()
-        .find(|(_oref, owner)| matches!(owner, iota_types::object::Owner::Shared { .. }))
+        .find(|(_oref, owner)| matches!(owner, iota_types::object::Owner::Shared(_)))
         .map(|(oref, _)| oref)
         .expect("counter should have been created as a shared object");
 
@@ -87,29 +88,27 @@ fn chain_create_then_increment_counter() -> Result<()> {
         .effects
         .created()
         .into_iter()
-        .find(|(oref, _)| oref.0 == counter_ref.0)
+        .find(|(oref, _)| oref.object_id == counter_ref.object_id)
         .map(|(_, owner)| owner)
         .unwrap()
     {
-        iota_types::object::Owner::Shared {
-            initial_shared_version,
-        } => initial_shared_version,
+        iota_types::object::Owner::Shared(initial_shared_version) => initial_shared_version,
         other => panic!("expected Shared owner, got {other:?}"),
     };
 
     // tx2: increment the counter.
     let mut b = ProgrammableTransactionBuilder::new();
     let arg = b
-        .obj(ObjectArg::SharedObject {
-            id: counter_ref.0,
+        .obj(CallArg::Shared(SharedObjectReference {
+            object_id: counter_ref.object_id,
             initial_shared_version: counter_shared_version,
             mutable: true,
-        })
+        }))
         .unwrap();
     b.programmable_move_call(
         synthetic_id(),
-        ident_str!("counter").into(),
-        ident_str!("increment").into(),
+        Identifier::from_static("counter"),
+        Identifier::from_static("increment"),
         vec![],
         vec![arg],
     );
@@ -123,14 +122,16 @@ fn chain_create_then_increment_counter() -> Result<()> {
 
     let r2 = chain.simulate(tx2, VmChecks::Enabled)?;
     assert!(
-        r2.effects.status().is_ok(),
+        r2.effects.status().is_success(),
         "tx2 increment must succeed (state was carried from tx1): {:?}",
         r2.effects.status()
     );
 
     // The counter should have been mutated in tx2's effects.
     let mutated = r2.effects.mutated();
-    let hit = mutated.iter().any(|(oref, _)| oref.0 == counter_ref.0);
+    let hit = mutated
+        .iter()
+        .any(|(oref, _)| oref.object_id == counter_ref.object_id);
     assert!(
         hit,
         "tx2 should list the counter as mutated; mutated: {mutated:?}"
@@ -142,7 +143,7 @@ fn chain_create_then_increment_counter() -> Result<()> {
         chain
             .history()
             .created_object_ids()
-            .any(|id| id == counter_ref.0)
+            .any(|id| id == counter_ref.object_id)
     );
 
     Ok(())
@@ -157,14 +158,14 @@ fn apply_effects_removes_deleted_ids() {
     // semantics directly.
     use iota_types::{
         digests::TransactionDigest,
-        object::{MoveObject, Object, Owner},
+        object::{MoveObject, MoveObjectExt, Object, Owner},
     };
 
     let mut store = InMemoryStore::new();
     let fake_coin = Object::new_move(
         MoveObject::new_gas_coin(SequenceNumber::from(1), ObjectID::MAX, 1_000),
-        Owner::AddressOwner(IotaAddress::ZERO),
-        TransactionDigest::genesis_marker(),
+        Owner::Address(IotaAddress::ZERO),
+        TransactionDigest::ZERO,
     );
     let fake_id = fake_coin.id();
     store.insert(fake_coin);
@@ -193,8 +194,8 @@ fn manual_apply_effects_across_calls() -> Result<()> {
     let mut b = ProgrammableTransactionBuilder::new();
     b.programmable_move_call(
         synthetic_id(),
-        ident_str!("counter").into(),
-        ident_str!("create").into(),
+        Identifier::from_static("counter"),
+        Identifier::from_static("create"),
         vec![],
         vec![],
     );
@@ -206,15 +207,15 @@ fn manual_apply_effects_across_calls() -> Result<()> {
         1000,
     );
     let r1 = offline.simulate_transaction(tx1, VmChecks::Enabled)?;
-    assert!(r1.effects.status().is_ok());
+    assert!(r1.effects.status().is_success());
 
     // Before apply: the counter ID isn't in the store yet.
     let counter_id = r1
         .effects
         .created()
         .into_iter()
-        .find(|(_oref, owner)| matches!(owner, iota_types::object::Owner::Shared { .. }))
-        .map(|(oref, _)| oref.0)
+        .find(|(_oref, owner)| matches!(owner, iota_types::object::Owner::Shared(_)))
+        .map(|(oref, _)| oref.object_id)
         .unwrap();
     assert!(offline.store_mut().get_object(&counter_id).is_none());
 

@@ -28,17 +28,18 @@ use iota_local_executor::{
 };
 use iota_protocol_config::{Chain, ProtocolConfig, ProtocolVersion};
 use iota_types::{
-    base_types::{IotaAddress, ObjectID},
+    base_types::{Identifier, IotaAddress, ObjectID},
     effects::TransactionEffectsAPI,
     programmable_transaction_builder::ProgrammableTransactionBuilder,
-    transaction::{TEST_ONLY_GAS_UNIT_FOR_HEAVY_COMPUTATION_STORAGE, TransactionData},
+    transaction::{
+        TEST_ONLY_GAS_UNIT_FOR_HEAVY_COMPUTATION_STORAGE, TransactionData, TransactionDataAPI,
+    },
 };
-use move_core_types::ident_str;
 
 fn main() -> Result<()> {
     // Synthetic package ID — any ObjectID works; callers pick something
     // recognisable like 0x42 so it's obvious in traces.
-    let synthetic_id = ObjectID::from_hex_literal("0x42")?;
+    let synthetic_id = ObjectID::from_short_hex("0x42")?;
 
     // The fixture package is checked in at tests/fixtures/hello_debug/. The
     // same path works for this example because it's inside the crate.
@@ -70,8 +71,8 @@ fn main() -> Result<()> {
     let n_arg = builder.pure(10u64)?;
     builder.programmable_move_call(
         synthetic_id,
-        ident_str!("hello").into(),
-        ident_str!("sum_to").into(),
+        Identifier::from_static("hello"),
+        Identifier::from_static("sum_to"),
         vec![],
         vec![n_arg],
     );

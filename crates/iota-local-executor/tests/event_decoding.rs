@@ -14,13 +14,17 @@ use iota_local_executor::{
     ChainedOfflineExecutor, GasEstimate, InMemoryStore, LocalPackage, OfflineExecutor, VmChecks,
 };
 use iota_protocol_config::{Chain, ProtocolConfig, ProtocolVersion};
+use iota_sdk_types::SharedObjectReference;
 use iota_types::{
-    base_types::{IotaAddress, ObjectID},
+    base_types::{Identifier, IotaAddress, ObjectID},
     effects::TransactionEffectsAPI,
     programmable_transaction_builder::ProgrammableTransactionBuilder,
-    transaction::{ObjectArg, TEST_ONLY_GAS_UNIT_FOR_HEAVY_COMPUTATION_STORAGE, TransactionData},
+    transaction::{
+        CallArg, TEST_ONLY_GAS_UNIT_FOR_HEAVY_COMPUTATION_STORAGE, TransactionData,
+        TransactionDataAPI,
+    },
 };
-use move_core_types::{annotated_value::MoveValue, ident_str};
+use move_core_types::annotated_value::MoveValue;
 
 fn fixture_path() -> PathBuf {
     let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -29,7 +33,7 @@ fn fixture_path() -> PathBuf {
 }
 
 fn synthetic_id() -> ObjectID {
-    ObjectID::from_hex_literal("0x42").unwrap()
+    ObjectID::from_short_hex("0x42").unwrap()
 }
 
 fn protocol_config() -> ProtocolConfig {
@@ -52,8 +56,8 @@ fn decode_emitted_incremented_event() -> Result<()> {
     let mut b = ProgrammableTransactionBuilder::new();
     b.programmable_move_call(
         synthetic_id(),
-        ident_str!("counter").into(),
-        ident_str!("create").into(),
+        Identifier::from_static("counter"),
+        Identifier::from_static("create"),
         vec![],
         vec![],
     );
@@ -70,36 +74,34 @@ fn decode_emitted_incremented_event() -> Result<()> {
         .effects
         .created()
         .into_iter()
-        .find(|(_oref, owner)| matches!(owner, iota_types::object::Owner::Shared { .. }))
+        .find(|(_oref, owner)| matches!(owner, iota_types::object::Owner::Shared(_)))
         .map(|(oref, _)| oref)
         .unwrap();
     let initial_shared_version = match r1
         .effects
         .created()
         .into_iter()
-        .find(|(oref, _)| oref.0 == counter_oref.0)
+        .find(|(oref, _)| oref.object_id == counter_oref.object_id)
         .map(|(_, owner)| owner)
         .unwrap()
     {
-        iota_types::object::Owner::Shared {
-            initial_shared_version,
-        } => initial_shared_version,
+        iota_types::object::Owner::Shared(initial_shared_version) => initial_shared_version,
         other => panic!("expected Shared, got {other:?}"),
     };
 
     // tx2: increment — emits the Incremented event.
     let mut b = ProgrammableTransactionBuilder::new();
     let arg = b
-        .obj(ObjectArg::SharedObject {
-            id: counter_oref.0,
+        .obj(CallArg::Shared(SharedObjectReference {
+            object_id: counter_oref.object_id,
             initial_shared_version,
             mutable: true,
-        })
+        }))
         .unwrap();
     b.programmable_move_call(
         synthetic_id(),
-        ident_str!("counter").into(),
-        ident_str!("increment").into(),
+        Identifier::from_static("counter"),
+        Identifier::from_static("increment"),
         vec![],
         vec![arg],
     );
@@ -111,7 +113,11 @@ fn decode_emitted_incremented_event() -> Result<()> {
         1000,
     );
     let r2 = chain.simulate(tx2, VmChecks::Enabled)?;
-    assert!(r2.effects.status().is_ok(), "{:?}", r2.effects.status());
+    assert!(
+        r2.effects.status().is_success(),
+        "{:?}",
+        r2.effects.status()
+    );
 
     let events = r2.events.as_ref().expect("increment should produce events");
     assert_eq!(events.data.len(), 1, "one event emitted");
@@ -123,7 +129,7 @@ fn decode_emitted_incremented_event() -> Result<()> {
 
     assert_eq!(event.package_id, synthetic_id());
     assert_eq!(event.transaction_module.as_str(), "counter");
-    assert_eq!(event.type_.name.as_str(), "Incremented");
+    assert_eq!(event.type_.name().as_str(), "Incremented");
 
     // The value must be a struct with one `new_value: u64` field equal to 1
     // (counter was 0, incremented once).
@@ -162,8 +168,8 @@ fn gas_estimate_surfaces_effects_numbers() -> Result<()> {
     let n = b.pure(20u64).unwrap();
     b.programmable_move_call(
         synthetic_id(),
-        ident_str!("hello").into(),
-        ident_str!("work").into(),
+        Identifier::from_static("hello"),
+        Identifier::from_static("work"),
         vec![],
         vec![n],
     );

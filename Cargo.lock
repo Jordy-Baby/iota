@@ -6714,7 +6714,7 @@ dependencies = [
 
 [[package]]
 name = "iota-local-exec"
-version = "1.22.0-alpha"
+version = "1.24.0-alpha"
 dependencies = [
  "anyhow",
  "bcs",
@@ -6732,7 +6732,7 @@ dependencies = [
 
 [[package]]
 name = "iota-local-executor"
-version = "1.22.0-alpha"
+version = "1.24.0-alpha"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6752,7 +6752,7 @@ dependencies = [
  "iota-move-build",
  "iota-protocol-config",
  "iota-sdk",
- "iota-sdk-types",
+ "iota-sdk-types 0.0.1-alpha.1 (git+https://github.com/iotaledger/iota-rust-sdk.git?rev=c37fbcc9ad56c92f23582dcdb8203e3594088639)",
  "iota-test-transaction-builder",
  "iota-transaction-checks",
  "iota-types",

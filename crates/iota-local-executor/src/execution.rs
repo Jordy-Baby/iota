@@ -30,9 +30,9 @@ use iota_types::{
     gas_coin::NANOS_PER_IOTA,
     metrics::{BytecodeVerifierMetrics, LimitsMetrics},
     move_authenticator::MoveAuthenticator,
-    object::{MoveObject, Object, Owner},
+    object::{MoveObject, MoveObjectExt, Object, Owner},
     signature::VerifyParams,
-    signature_verification::{VerifiedDigestCache, verify_sender_signed_data_message_signatures},
+    signature_verification::verify_sender_signed_data_message_signatures,
     storage::BackingStore,
     transaction::{
         CheckedInputObjects, InputObjectKind, InputObjects, ObjectReadResult,
@@ -309,15 +309,8 @@ pub(crate) fn simulate_signed_with_debug(
         move_stdlib_natives::debug::install_debug_sink();
     }
     let verify_params = VerifyParams::default();
-    let zklogin_inputs_cache = Arc::new(VerifiedDigestCache::new_empty());
 
-    verify_sender_signed_data_message_signatures(
-        &signed_data,
-        env.epoch_id,
-        &verify_params,
-        zklogin_inputs_cache,
-    )
-    .map_err(|e| {
+    verify_sender_signed_data_message_signatures(&signed_data, &verify_params).map_err(|e| {
         crate::error::LocalExecError::validation("signature verification", anyhow::anyhow!("{e}"))
     })?;
 
@@ -379,12 +372,12 @@ fn prepare_transaction(
         .map(|gas_ref| {
             store
                 .as_object_store()
-                .get_object(&gas_ref.0)
+                .get_object(&gas_ref.object_id)
                 .map(|obj| obj.compute_object_reference())
                 .unwrap_or(*gas_ref)
         })
         .collect();
-    transaction.gas_data_mut().payment = updated_gas;
+    transaction.gas_data_mut().objects = updated_gas;
 
     // Resolve input and receiving objects from the store.
     let raw_input_object_kinds = transaction.input_objects()?;
@@ -399,11 +392,11 @@ fn prepare_transaction(
     let mock_gas_id = if transaction.gas().is_empty() {
         let mock_gas_object = Object::new_move(
             MoveObject::new_gas_coin(1.into(), ObjectID::MAX, SIMULATION_GAS_COIN_VALUE),
-            Owner::AddressOwner(transaction.gas_data().owner),
-            TransactionDigest::genesis_marker(),
+            Owner::Address(transaction.gas_data().owner),
+            TransactionDigest::ZERO,
         );
         let mock_gas_object_ref = mock_gas_object.compute_object_reference();
-        transaction.gas_data_mut().payment = vec![mock_gas_object_ref];
+        transaction.gas_data_mut().objects = vec![mock_gas_object_ref];
         input_objects.push(ObjectReadResult::new_from_gas_object(&mock_gas_object));
         Some(mock_gas_object.id())
     } else {
@@ -612,7 +605,7 @@ fn resolve_authenticator_function_ref(
 
     let field_move_object = field_obj
         .data
-        .try_as_move()
+        .as_struct_opt()
         .ok_or_else(|| anyhow::anyhow!("authenticator dynamic field is not a Move object"))?;
 
     let field: Field<AuthenticatorFunctionRefV1Key, AuthenticatorFunctionRefV1> = field_move_object
@@ -670,12 +663,13 @@ fn build_receiving_objects(
 ) -> Result<ReceivingObjects> {
     let mut receiving_objects = Vec::new();
     for objref in receiving_object_refs {
-        let obj = store.as_object_store().get_object(&objref.0).ok_or(
-            iota_types::error::UserInputError::ObjectNotFound {
-                object_id: objref.0,
-                version: Some(objref.1),
-            },
-        )?;
+        let obj = store
+            .as_object_store()
+            .get_object(&objref.object_id)
+            .ok_or(iota_types::error::UserInputError::ObjectNotFound {
+                object_id: objref.object_id,
+                version: Some(objref.version),
+            })?;
         let updated_ref = obj.compute_object_reference();
         receiving_objects.push(ReceivingObjectReadResult::new(updated_ref, obj.into()));
     }
@@ -697,10 +691,10 @@ pub(crate) fn collect_all_object_ids(transaction: &TransactionData) -> Result<Ve
         .map(|kind| kind.object_id())
         .collect();
     for gas_ref in transaction.gas() {
-        ids.push(gas_ref.0);
+        ids.push(gas_ref.object_id);
     }
     for objref in &receiving_object_refs {
-        ids.push(objref.0);
+        ids.push(objref.object_id);
     }
     ids.sort();
     ids.dedup();
@@ -727,17 +721,19 @@ pub(crate) fn split_transaction_refs(
     for kind in &input_object_kinds {
         match kind {
             InputObjectKind::ImmOrOwnedMoveObject(objref) => {
-                versioned.insert(objref.0, objref.1);
+                versioned.insert(objref.object_id, objref.version);
             }
             InputObjectKind::SharedMoveObject { id, .. } => latest.push(*id),
             InputObjectKind::MovePackage(id) => latest.push(*id),
         }
     }
     for gas_ref in transaction.gas() {
-        versioned.entry(gas_ref.0).or_insert(gas_ref.1);
+        versioned
+            .entry(gas_ref.object_id)
+            .or_insert(gas_ref.version);
     }
     for objref in &receiving_object_refs {
-        versioned.entry(objref.0).or_insert(objref.1);
+        versioned.entry(objref.object_id).or_insert(objref.version);
     }
 
     // An object shouldn't appear in both sets, but be safe.

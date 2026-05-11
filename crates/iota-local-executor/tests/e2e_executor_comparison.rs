@@ -13,10 +13,10 @@ use iota_local_executor::{
     DebugConfig, GrpcExecutor, JsonRpcExecutor, ObjectFetchMode, ProfileOutput, ProfileSink,
     SenderSignedData, VmChecks,
 };
+use iota_sdk_types::SharedObjectReference;
 use iota_test_transaction_builder::{TestTransactionBuilder, publish_package};
 use iota_types::{
-    IOTA_FRAMEWORK_ADDRESS, TypeTag,
-    base_types::{IotaAddress, ObjectID, ObjectRef},
+    base_types::{Identifier, IotaAddress, ObjectID, ObjectRef, TypeTag},
     crypto::{AccountKeyPair, get_key_pair},
     effects::TransactionEffectsAPI,
     gas::GasCostSummary,
@@ -27,11 +27,10 @@ use iota_types::{
     signature::GenericSignature,
     storage::WriteKind,
     transaction::{
-        Argument, CallArg, ObjectArg, TEST_ONLY_GAS_UNIT_FOR_HEAVY_COMPUTATION_STORAGE,
-        Transaction, TransactionData,
+        Argument, CallArg, TEST_ONLY_GAS_UNIT_FOR_HEAVY_COMPUTATION_STORAGE, Transaction,
+        TransactionData, TransactionDataAPI,
     },
 };
-use move_core_types::ident_str;
 use test_cluster::TestClusterBuilder;
 
 // ---------------------------------------------------------------------------
@@ -108,7 +107,7 @@ async fn compare_executors_transfer() {
         .unwrap()
         .unwrap();
     let rgp = test_cluster.get_reference_gas_price().await;
-    let recipient = IotaAddress::random_for_testing_only();
+    let recipient = IotaAddress::random();
 
     let tx_data = TestTransactionBuilder::new(sender, gas, rgp)
         .transfer_iota(Some(1_000_000), recipient)
@@ -158,7 +157,7 @@ async fn compare_executors_transfer() {
     let local_summary = {
         let effects = &local_result.effects;
         SimulationSummary {
-            success: effects.status().is_ok(),
+            success: effects.status().is_success(),
             gas: effects.gas_cost_summary().clone(),
             created_count: effects.created().len(),
             mutated_count: effects.mutated().len(),
@@ -190,7 +189,7 @@ async fn compare_executors_transfer() {
     let grpc_summary = {
         let effects = &grpc_result.effects;
         SimulationSummary {
-            success: effects.status().is_ok(),
+            success: effects.status().is_success(),
             gas: effects.gas_cost_summary().clone(),
             created_count: effects.created().len(),
             mutated_count: effects.mutated().len(),
@@ -228,7 +227,7 @@ async fn compare_executors_dev_inspect() {
         .unwrap()
         .unwrap();
     let rgp = test_cluster.get_reference_gas_price().await;
-    let recipient = IotaAddress::random_for_testing_only();
+    let recipient = IotaAddress::random();
 
     let tx_data = TestTransactionBuilder::new(sender, gas, rgp)
         .transfer_iota(Some(500_000), recipient)
@@ -250,7 +249,7 @@ async fn compare_executors_dev_inspect() {
         .await
         .expect("JsonRpcExecutor dev-inspect should succeed");
     assert!(
-        local_result.effects.status().is_ok(),
+        local_result.effects.status().is_success(),
         "JsonRpcExecutor dev-inspect should succeed"
     );
 
@@ -268,7 +267,7 @@ async fn compare_executors_dev_inspect() {
         .await
         .expect("GrpcExecutor dev-inspect should succeed");
     assert!(
-        grpc_result.effects.status().is_ok(),
+        grpc_result.effects.status().is_success(),
         "GrpcExecutor dev-inspect should succeed"
     );
 
@@ -308,7 +307,7 @@ async fn compare_executors_latest_version_mode() {
         .unwrap()
         .unwrap();
     let rgp = test_cluster.get_reference_gas_price().await;
-    let recipient = IotaAddress::random_for_testing_only();
+    let recipient = IotaAddress::random();
 
     let tx_data = TestTransactionBuilder::new(sender, gas, rgp)
         .transfer_iota(Some(100_000), recipient)
@@ -331,7 +330,7 @@ async fn compare_executors_latest_version_mode() {
         .await
         .expect("JsonRpcExecutor latest-version simulate should succeed");
     assert!(
-        local_result.effects.status().is_ok(),
+        local_result.effects.status().is_success(),
         "JsonRpcExecutor latest-version should succeed"
     );
 
@@ -350,7 +349,7 @@ async fn compare_executors_latest_version_mode() {
         .await
         .expect("GrpcExecutor latest-version simulate should succeed");
     assert!(
-        grpc_result.effects.status().is_ok(),
+        grpc_result.effects.status().is_success(),
         "GrpcExecutor latest-version should succeed"
     );
 
@@ -433,7 +432,7 @@ async fn compare_executors_staking_move_call() {
         .await
         .expect("JsonRpcExecutor staking should succeed");
     assert!(
-        local_result.effects.status().is_ok(),
+        local_result.effects.status().is_success(),
         "JsonRpcExecutor staking should succeed: {:?}",
         local_result.effects.status()
     );
@@ -448,7 +447,7 @@ async fn compare_executors_staking_move_call() {
         .await
         .expect("GrpcExecutor staking should succeed");
     assert!(
-        grpc_result.effects.status().is_ok(),
+        grpc_result.effects.status().is_success(),
         "GrpcExecutor staking should succeed: {:?}",
         grpc_result.effects.status()
     );
@@ -487,7 +486,7 @@ async fn simulate_signed_transaction_valid_signature() {
         .unwrap()
         .unwrap();
     let rgp = test_cluster.get_reference_gas_price().await;
-    let recipient = IotaAddress::random_for_testing_only();
+    let recipient = IotaAddress::random();
 
     let tx_data = TestTransactionBuilder::new(sender, gas, rgp)
         .transfer_iota(Some(1_000_000), recipient)
@@ -512,7 +511,7 @@ async fn simulate_signed_transaction_valid_signature() {
         .expect("simulate_signed_transaction with valid signature should succeed");
 
     assert!(
-        result.effects.status().is_ok(),
+        result.effects.status().is_success(),
         "signed transaction execution should succeed: {:?}",
         result.effects.status()
     );
@@ -536,7 +535,7 @@ async fn simulate_signed_transaction_invalid_signature() {
         .unwrap()
         .unwrap();
     let rgp = test_cluster.get_reference_gas_price().await;
-    let recipient = IotaAddress::random_for_testing_only();
+    let recipient = IotaAddress::random();
 
     let tx_data = TestTransactionBuilder::new(sender, gas, rgp)
         .transfer_iota(Some(1_000_000), recipient)
@@ -587,7 +586,7 @@ async fn publish_aa_package(test_cluster: &mut test_cluster::TestCluster) -> (Ob
     let path: PathBuf = [env!("CARGO_MANIFEST_DIR"), AA_PACKAGE_PATH]
         .iter()
         .collect();
-    let aa_package_id = publish_package(test_cluster.wallet(), path).await.0;
+    let aa_package_id = publish_package(test_cluster.wallet(), path).await.object_id;
     let aa_metadata_id = move_package::derive_package_metadata_id(aa_package_id);
     let aa_metadata_ref = test_cluster.get_latest_object_ref(&aa_metadata_id).await;
     (aa_package_id, aa_metadata_ref)
@@ -613,15 +612,15 @@ async fn create_abstract_account(
         let mut builder = ProgrammableTransactionBuilder::new();
         let arguments = vec![
             builder
-                .obj(ObjectArg::ImmOrOwnedObject(aa_metadata_ref))
+                .obj(CallArg::ImmutableOrOwned(aa_metadata_ref))
                 .unwrap(),
             builder.pure(AA_AUTHENTICATE_MODULE_NAME).unwrap(),
             builder.pure(authenticate_fn_name).unwrap(),
         ];
         if let Argument::Result(auth_fn_ref) = builder.programmable_move_call(
-            IOTA_FRAMEWORK_ADDRESS.into(),
-            ident_str!("authenticator_function").to_owned(),
-            ident_str!("create_auth_function_ref_v1").to_owned(),
+            iota_types::IOTA_FRAMEWORK_PACKAGE_ID,
+            Identifier::from_static("authenticator_function"),
+            Identifier::from_static("create_auth_function_ref_v1"),
             vec![
                 TypeTag::from_str(&format!(
                     "{aa_package_id}::{AA_MODULE_NAME}::{AA_ACCOUNT_NAME}"
@@ -636,8 +635,8 @@ async fn create_abstract_account(
             ];
             builder.programmable_move_call(
                 aa_package_id,
-                ident_str!(AA_CREATE_MODULE_NAME).to_owned(),
-                ident_str!("create").to_owned(),
+                Identifier::from(AA_CREATE_MODULE_NAME),
+                Identifier::from_static("create"),
                 vec![],
                 arguments,
             );
@@ -661,7 +660,7 @@ async fn create_abstract_account(
         .all_changed_objects()
         .iter()
         .find_map(|change| match change {
-            (objref, Owner::Shared { .. }, WriteKind::Create) => Some(*objref),
+            (objref, Owner::Shared(_), WriteKind::Create) => Some(*objref),
             _ => None,
         })
         .expect("expected a created shared object (the abstract account)")
@@ -675,19 +674,19 @@ fn craft_aa_simple_ptb(
     let mut builder = ProgrammableTransactionBuilder::new();
     let arguments = vec![
         builder
-            .obj(ObjectArg::SharedObject {
-                id: aa_ref.0,
-                initial_shared_version: aa_ref.1,
+            .obj(CallArg::Shared(SharedObjectReference {
+                object_id: aa_ref.object_id,
+                initial_shared_version: aa_ref.version,
                 mutable: true,
-            })
+            }))
             .unwrap(),
         builder.pure(1_u8).unwrap(),
         builder.pure(2_u8).unwrap(),
     ];
     builder.programmable_move_call(
         aa_package_id,
-        ident_str!(AA_MODULE_NAME).to_owned(),
-        ident_str!("add_field").to_owned(),
+        Identifier::from(AA_MODULE_NAME),
+        Identifier::from_static("add_field"),
         vec![TypeTag::U8, TypeTag::U8],
         arguments,
     );
@@ -719,7 +718,7 @@ async fn simulate_signed_transaction_move_authenticator_valid() {
     .await;
 
     // 2. Fund the abstract account address so it can pay for gas.
-    let aa_sender: IotaAddress = aa_ref.0.into();
+    let aa_sender: IotaAddress = IotaAddress::new(aa_ref.object_id.into_bytes());
     let rgp = test_cluster.get_reference_gas_price().await;
     let aa_gas = test_cluster
         .fund_address_and_return_gas(rgp, Some(20_000_000_000), aa_sender)
@@ -738,9 +737,9 @@ async fn simulate_signed_transaction_move_authenticator_valid() {
     );
 
     // 4. Create a MoveAuthenticator (free_access — no extra args needed).
-    let self_call_arg = CallArg::Object(ObjectArg::SharedObject {
-        id: aa_ref.0,
-        initial_shared_version: aa_ref.1,
+    let self_call_arg = CallArg::Shared(SharedObjectReference {
+        object_id: aa_ref.object_id,
+        initial_shared_version: aa_ref.version,
         mutable: false,
     });
     let move_auth = GenericSignature::MoveAuthenticator(MoveAuthenticator::new_v1(
@@ -764,7 +763,7 @@ async fn simulate_signed_transaction_move_authenticator_valid() {
         .expect("MoveAuthenticator simulate_signed_transaction should succeed");
 
     assert!(
-        result.effects.status().is_ok(),
+        result.effects.status().is_success(),
         "MoveAuthenticator transaction should succeed: {:?}",
         result.effects.status()
     );
@@ -796,7 +795,7 @@ async fn simulate_signed_transaction_move_authenticator_invalid_args() {
     .await;
 
     // 2. Fund the abstract account address so it can pay for gas.
-    let aa_sender: IotaAddress = aa_ref.0.into();
+    let aa_sender: IotaAddress = IotaAddress::new(aa_ref.object_id.into_bytes());
     let rgp = test_cluster.get_reference_gas_price().await;
     let aa_gas = test_cluster
         .fund_address_and_return_gas(rgp, Some(20_000_000_000), aa_sender)
@@ -818,9 +817,9 @@ async fn simulate_signed_transaction_move_authenticator_invalid_args() {
     //    address matches, so pre-execution checks pass. But the Move
     //    authenticate_ed25519 function will abort because the signature doesn't
     //    verify against the stored public key.
-    let self_call_arg = CallArg::Object(ObjectArg::SharedObject {
-        id: aa_ref.0,
-        initial_shared_version: aa_ref.1,
+    let self_call_arg = CallArg::Shared(SharedObjectReference {
+        object_id: aa_ref.object_id,
+        initial_shared_version: aa_ref.version,
         mutable: false,
     });
     // 64 hex chars of zeros = 32 bytes of zeros, which is an invalid Ed25519 sig.
@@ -849,7 +848,7 @@ async fn simulate_signed_transaction_move_authenticator_invalid_args() {
     // The authenticator function should have aborted — the effects should
     // indicate execution failure.
     assert!(
-        result.effects.status().is_err(),
+        result.effects.status().is_failure(),
         "MoveAuthenticator with bogus signature should fail during VM execution: {:?}",
         result.effects.status()
     );
@@ -881,7 +880,7 @@ async fn simulate_signed_transaction_move_authenticator_with_debug() {
     )
     .await;
 
-    let aa_sender: IotaAddress = aa_ref.0.into();
+    let aa_sender: IotaAddress = IotaAddress::new(aa_ref.object_id.into_bytes());
     let rgp = test_cluster.get_reference_gas_price().await;
     let aa_gas = test_cluster
         .fund_address_and_return_gas(rgp, Some(20_000_000_000), aa_sender)
@@ -898,9 +897,9 @@ async fn simulate_signed_transaction_move_authenticator_with_debug() {
         aa_sender,
     );
 
-    let self_call_arg = CallArg::Object(ObjectArg::SharedObject {
-        id: aa_ref.0,
-        initial_shared_version: aa_ref.1,
+    let self_call_arg = CallArg::Shared(SharedObjectReference {
+        object_id: aa_ref.object_id,
+        initial_shared_version: aa_ref.version,
         mutable: false,
     });
     let move_auth = GenericSignature::MoveAuthenticator(MoveAuthenticator::new_v1(
@@ -933,7 +932,7 @@ async fn simulate_signed_transaction_move_authenticator_with_debug() {
         .expect("MoveAuthenticator simulate_signed_transaction_with_debug should succeed");
 
     assert!(
-        out.result.effects.status().is_ok(),
+        out.result.effects.status().is_success(),
         "MoveAuthenticator transaction should succeed: {:?}",
         out.result.effects.status()
     );

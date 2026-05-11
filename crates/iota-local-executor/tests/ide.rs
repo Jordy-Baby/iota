@@ -13,11 +13,12 @@ use iota_local_executor::{
 };
 use iota_protocol_config::{Chain, ProtocolConfig, ProtocolVersion};
 use iota_types::{
-    base_types::{IotaAddress, ObjectID},
+    base_types::{Identifier, IotaAddress, ObjectID},
     programmable_transaction_builder::ProgrammableTransactionBuilder,
-    transaction::{TEST_ONLY_GAS_UNIT_FOR_HEAVY_COMPUTATION_STORAGE, TransactionData},
+    transaction::{
+        TEST_ONLY_GAS_UNIT_FOR_HEAVY_COMPUTATION_STORAGE, TransactionData, TransactionDataAPI,
+    },
 };
-use move_core_types::ident_str;
 
 fn fixture_path() -> PathBuf {
     let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -26,7 +27,7 @@ fn fixture_path() -> PathBuf {
 }
 
 fn synthetic_id() -> ObjectID {
-    ObjectID::from_hex_literal("0x42").unwrap()
+    ObjectID::from_short_hex("0x42").unwrap()
 }
 
 fn protocol_config() -> ProtocolConfig {
@@ -60,8 +61,8 @@ fn summarize_by_function_sees_fixture_calls() -> Result<()> {
     let n = b.pure(50u64).unwrap();
     b.programmable_move_call(
         synthetic_id(),
-        ident_str!("hello").into(),
-        ident_str!("sum_to").into(),
+        Identifier::from_static("hello"),
+        Identifier::from_static("sum_to"),
         vec![],
         vec![n],
     );
