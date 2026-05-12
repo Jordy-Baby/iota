@@ -11,7 +11,10 @@ use std::{collections::BTreeMap, path::Path};
 
 use anyhow::{Context, Result};
 use iota_local_executor::{DebugSimulateResult, ProfileOutput, summarize_by_function};
-use iota_types::effects::{TransactionEffectsAPI, TransactionEvents};
+use iota_types::{
+    effects::{TransactionEffectsAPI, TransactionEvents},
+    execution_status::ExecutionStatus,
+};
 use serde::Serialize;
 use serde_json::json;
 
@@ -44,7 +47,7 @@ pub(crate) struct ExecutionSummary {
 impl ExecutionSummary {
     /// Extract a flat summary from a [`DebugSimulateResult`].
     pub(crate) fn from_result(out: &DebugSimulateResult) -> Self {
-        let status_ok = out.result.effects.status().is_ok();
+        let status_ok = matches!(out.result.effects.status(), ExecutionStatus::Success);
         let gas = out.result.effects.gas_cost_summary().clone();
         let events_count = out
             .result

@@ -9,12 +9,11 @@ use std::str::FromStr;
 use anyhow::{Context, Result, anyhow, bail};
 use iota_local_executor::InMemoryStore;
 use iota_types::{
-    base_types::{IotaAddress, ObjectID, ObjectRef},
+    base_types::{Identifier, IotaAddress, ObjectID, ObjectRef, TypeTag},
     object::Owner,
     programmable_transaction_builder::ProgrammableTransactionBuilder,
-    transaction::{Argument, ObjectArg, TransactionData},
+    transaction::{Argument, CallArg, SharedObjectRef, TransactionData, TransactionDataAPI},
 };
-use move_core_types::{identifier::Identifier, language_storage::TypeTag};
 
 use crate::{
     args::{ParsedValue, parse_value},
@@ -57,8 +56,10 @@ pub(crate) fn build(
 
     builder.programmable_move_call(
         call.package_id,
-        Identifier::new(call.module.clone())?,
-        Identifier::new(call.function.clone())?,
+        Identifier::new(&call.module)
+            .map_err(|e| anyhow!("invalid module name `{}`: {e}", call.module))?,
+        Identifier::new(&call.function)
+            .map_err(|e| anyhow!("invalid function name `{}`: {e}", call.function))?,
         type_args,
         lowered_args,
     );
@@ -80,7 +81,7 @@ fn parse_type_args(specs: &[String]) -> Result<Vec<TypeTag>> {
 fn resolve_gas_coins(gas_coin: Option<&str>, store: &InMemoryStore) -> Result<Vec<ObjectRef>> {
     match gas_coin {
         Some(s) => {
-            let id = ObjectID::from_hex_literal(s)
+            let id = ObjectID::from_prefixed_short_hex(s)
                 .with_context(|| format!("parsing --gas-coin `{s}`"))?;
             let obj = store
                 .get_object(&id)
@@ -114,19 +115,17 @@ fn lower_into_builder(
             let obj = store.get_object(&id).ok_or_else(|| {
                 anyhow!("object {id} not found in store (pass --package or --remote-object)")
             })?;
-            let obj_arg = match obj.owner {
-                Owner::Shared {
-                    initial_shared_version,
-                } => ObjectArg::SharedObject {
-                    id,
+            let call_arg = match obj.owner {
+                Owner::Shared(initial_shared_version) => CallArg::Shared(SharedObjectRef {
+                    object_id: id,
                     initial_shared_version,
                     // Default to immutable reference; explicit mutable is a v2
                     // feature since the current grammar has no marker for it.
                     mutable: false,
-                },
-                _ => ObjectArg::ImmOrOwnedObject(obj.compute_object_reference()),
+                }),
+                _ => CallArg::ImmutableOrOwned(obj.compute_object_reference()),
             };
-            builder.obj(obj_arg)
+            builder.obj(call_arg)
         }
     }
 }

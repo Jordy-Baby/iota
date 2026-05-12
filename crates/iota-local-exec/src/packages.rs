@@ -45,7 +45,7 @@ pub(crate) fn load(
         let id = match explicit_id {
             Some(id) => id,
             None => {
-                let id = ObjectID::from_hex_literal(&format!("0x{next_auto_id:x}"))?;
+                let id = ObjectID::from_prefixed_short_hex(format!("0x{next_auto_id:x}"))?;
                 next_auto_id += 1;
                 id
             }
@@ -84,7 +84,7 @@ pub(crate) fn load(
 fn parse_package_spec(spec: &str) -> Result<(PathBuf, Option<ObjectID>)> {
     match spec.split_once('=') {
         Some((path, id)) => {
-            let id = ObjectID::from_hex_literal(id.trim())
+            let id = ObjectID::from_prefixed_short_hex(id.trim())
                 .with_context(|| format!("parsing package ID in `{spec}`"))?;
             Ok((PathBuf::from(path.trim()), Some(id)))
         }
@@ -98,7 +98,7 @@ fn parse_named_address_overrides(specs: &[String]) -> Result<BTreeMap<String, Ob
         let (key, id) = spec
             .split_once('=')
             .ok_or_else(|| anyhow!("--named-address `{spec}` is not in KEY=ID form"))?;
-        let id = ObjectID::from_hex_literal(id.trim())
+        let id = ObjectID::from_prefixed_short_hex(id.trim())
             .with_context(|| format!("parsing address in --named-address `{spec}`"))?;
         out.insert(key.trim().to_string(), id);
     }

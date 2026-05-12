@@ -223,7 +223,7 @@ fn run(cli: Cli) -> Result<u8> {
     let call = call::resolve_call_spec(call_spec, &packages, &aliases)?;
     let pkg = packages
         .iter()
-        .find(|p| p.id == call.package_id)
+        .find(|p| p.id() == call.package_id)
         .ok_or_else(|| {
             anyhow::anyhow!(
                 "--call references package {} but no such --package was supplied",

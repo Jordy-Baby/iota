@@ -9,9 +9,9 @@ use std::collections::BTreeMap;
 use anyhow::{Context, Result, anyhow, bail};
 use iota_local_executor::{InMemoryStore, LocalPackage};
 use iota_types::{
-    base_types::ObjectID,
+    base_types::{ObjectID, TypeTag},
     object::Owner,
-    transaction::{CallArg, ObjectArg, SenderSignedData, TransactionData},
+    transaction::{CallArg, SenderSignedData, SharedObjectRef, TransactionData},
 };
 
 use crate::{
@@ -31,16 +31,14 @@ pub(crate) fn wrap(
     aliases: &BTreeMap<String, ObjectID>,
     store: &InMemoryStore,
 ) -> Result<SenderSignedData> {
-    use iota_types::{
-        move_authenticator::MoveAuthenticator, signature::GenericSignature, type_input::TypeInput,
-    };
+    use iota_types::{move_authenticator::MoveAuthenticator, signature::GenericSignature};
 
     // Resolve the authenticator function's existence (same as --call) — this
     // catches typos before we kick off the VM.
     let call = resolve_call_spec(auth_spec, pkgs, aliases)?;
     let pkg = pkgs
         .iter()
-        .find(|p| p.id == call.package_id)
+        .find(|p| p.id() == call.package_id)
         .ok_or_else(|| {
             anyhow!(
                 "--authenticator references package {} but no such --package was supplied",
@@ -62,7 +60,7 @@ pub(crate) fn wrap(
     // object_to_authenticate is the account object itself (typically shared).
     let self_call_arg = account_object_call_arg(account_object.as_ref(), store)?;
 
-    let type_arguments: Vec<TypeInput> = Vec::new();
+    let type_arguments: Vec<TypeTag> = Vec::new();
     let authenticator = MoveAuthenticator::new_v1(call_args, type_arguments, self_call_arg);
     let generic = GenericSignature::MoveAuthenticator(authenticator);
     Ok(SenderSignedData::new(tx, vec![generic]))
@@ -98,17 +96,14 @@ fn parsed_to_call_arg(value: ParsedValue, store: &InMemoryStore) -> Result<CallA
             let obj = store
                 .get_object(&id)
                 .ok_or_else(|| anyhow!("object {id} for --auth-arg not found in store"))?;
-            let obj_arg = match obj.owner {
-                Owner::Shared {
-                    initial_shared_version,
-                } => ObjectArg::SharedObject {
-                    id,
+            match obj.owner {
+                Owner::Shared(initial_shared_version) => CallArg::Shared(SharedObjectRef {
+                    object_id: id,
                     initial_shared_version,
                     mutable: false,
-                },
-                _ => ObjectArg::ImmOrOwnedObject(obj.compute_object_reference()),
-            };
-            CallArg::Object(obj_arg)
+                }),
+                _ => CallArg::ImmutableOrOwned(obj.compute_object_reference()),
+            }
         }
     })
 }
@@ -125,21 +120,17 @@ fn account_object_call_arg(
              not supported in v1)"
         )
     })?;
-    let account_id = ObjectID::from_hex_literal(account_id_s)
+    let account_id = ObjectID::from_prefixed_short_hex(account_id_s)
         .with_context(|| format!("parsing --account-object `{account_id_s}`"))?;
     let account_obj = store
         .get_object(&account_id)
         .ok_or_else(|| anyhow!("--account-object {account_id} not found in store"))?;
     Ok(match account_obj.owner {
-        Owner::Shared {
-            initial_shared_version,
-        } => CallArg::Object(ObjectArg::SharedObject {
-            id: account_id,
+        Owner::Shared(initial_shared_version) => CallArg::Shared(SharedObjectRef {
+            object_id: account_id,
             initial_shared_version,
             mutable: false,
         }),
-        _ => CallArg::Object(ObjectArg::ImmOrOwnedObject(
-            account_obj.compute_object_reference(),
-        )),
+        _ => CallArg::ImmutableOrOwned(account_obj.compute_object_reference()),
     })
 }

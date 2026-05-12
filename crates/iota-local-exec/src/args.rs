@@ -52,7 +52,7 @@ pub(crate) fn parse_value(s: &str) -> Result<ParsedValue> {
     }
 
     if let Some(inner) = s.strip_prefix("object(").and_then(|t| t.strip_suffix(')')) {
-        let id = ObjectID::from_hex_literal(inner.trim())
+        let id = ObjectID::from_prefixed_short_hex(inner.trim())
             .with_context(|| format!("parsing object ID in `{s}`"))?;
         return Ok(ParsedValue::Object(id));
     }
@@ -81,7 +81,7 @@ pub(crate) fn parse_value(s: &str) -> Result<ParsedValue> {
 /// Accept either `0x...` hex-literal or a full 64-char padded address.
 pub(crate) fn parse_address(s: &str) -> Result<IotaAddress> {
     if s.starts_with("0x") {
-        let obj_id = ObjectID::from_hex_literal(s)
+        let obj_id = ObjectID::from_prefixed_short_hex(s)
             .map_err(|e| anyhow!("not a valid hex address `{s}`: {e}"))?;
         Ok(IotaAddress::from(obj_id))
     } else {

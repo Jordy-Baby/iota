@@ -40,14 +40,14 @@ pub(crate) fn resolve_call_spec(
                 );
             }
             Ok(ResolvedCall {
-                package_id: pkgs[0].id,
+                package_id: pkgs[0].id(),
                 module: (*module).to_string(),
                 function: (*function).to_string(),
             })
         }
         [pkg, module, function] => {
             let id = if pkg.starts_with("0x") {
-                ObjectID::from_hex_literal(pkg)
+                ObjectID::from_prefixed_short_hex(pkg)
                     .map_err(|e| anyhow!("parsing package ID in --call `{spec}`: {e}"))?
             } else {
                 *aliases.get(*pkg).ok_or_else(|| {
@@ -81,7 +81,7 @@ pub(crate) fn find_module_in_package<'a>(
         .ok_or_else(|| {
             anyhow!(
                 "module `{module}` not found in package {} — available: [{}]",
-                pkg.id,
+                pkg.id(),
                 pkg.compiled
                     .package
                     .root_compiled_units
