@@ -8,14 +8,14 @@ Currently only one layer produces a tagged error:
 
 - **`LocalExecError::Validation`** — pre-execution validation failed: signature wrong, tx malformed, gas budget below minimum, denied object. Not retryable — the caller has to fix the tx.
 
-Failures from the remote fetch layer (JSON-RPC / gRPC / GraphQL) and from inside the Move VM during simulation still propagate up as raw `anyhow::Error`. They may grow their own `LocalExecError` variants in the future; for now `downcast_ref::<LocalExecError>()` returns `None` for those.
+Failures from the remote fetch layer (gRPC / GraphQL) and from inside the Move VM during simulation still propagate up as raw `anyhow::Error`. They may grow their own `LocalExecError` variants in the future; for now `downcast_ref::<LocalExecError>()` returns `None` for those.
 
 ## Downcasting
 
 Every simulate method returns `anyhow::Result`. `LocalExecError` is tagged in via `map_err` so `downcast_ref` reveals it:
 
 ```rust
-use iota_local_executor::{JsonRpcExecutor, LocalExecError, VmChecks};
+use iota_local_executor::{GrpcExecutor, LocalExecError, VmChecks};
 
 match executor.simulate_transaction(tx, VmChecks::Enabled).await {
     Ok(r) => { /* inspect r.effects.status() */ }

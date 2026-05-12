@@ -5,9 +5,9 @@
 //! objects.
 //!
 //! This example demonstrates a two-phase workflow:
-//! 1. **Fetch phase**: Connect to a node and fetch all objects referenced by
-//!    the transaction, including dynamic field children needed during
-//!    execution.
+//! 1. **Fetch phase**: Connect to a node via gRPC and fetch all objects
+//!    referenced by the transaction, including dynamic field children needed
+//!    during execution.
 //! 2. **Execute phase**: Disconnect from the network and execute the
 //!    transaction fully offline using `OfflineExecutor`.
 //!
@@ -26,10 +26,10 @@
 
 use std::collections::BTreeSet;
 
-use anyhow::Result;
-use iota_json_rpc_types::IotaObjectDataOptions;
+use anyhow::{Result, anyhow};
+use iota_grpc_client::Client as GrpcClient;
 use iota_local_executor::{ChainInfo, InMemoryStore, OfflineExecutor, VmChecks};
-use iota_sdk::{IotaClient, IotaClientBuilder};
+use iota_sdk_types::{ObjectId, Version};
 use iota_types::{
     base_types::ObjectID,
     effects::TransactionEffectsAPI,
@@ -37,12 +37,13 @@ use iota_types::{
     transaction::{TransactionData, TransactionDataAPI},
 };
 
+const DEVNET_GRPC: &str = "https://api.devnet.iota.cafe";
+
 /// Recursively fetch all dynamic field children of the given object IDs.
 /// Returns all fetched child objects.
 async fn fetch_dynamic_field_children(
-    client: &IotaClient,
+    client: &GrpcClient,
     parent_ids: &[ObjectID],
-    options: &IotaObjectDataOptions,
 ) -> Result<Vec<Object>> {
     let mut all_children = Vec::new();
     let mut visited: BTreeSet<ObjectID> = BTreeSet::new();
@@ -53,40 +54,50 @@ async fn fetch_dynamic_field_children(
             continue;
         }
 
-        // Paginate through all dynamic fields of this parent
-        let mut cursor = None;
-        loop {
-            let page = client
-                .read_api()
-                .get_dynamic_fields(parent_id, cursor, Some(50))
-                .await?;
+        // Auto-paginate through all dynamic fields of this parent.
+        let parent_sdk: ObjectId = parent_id;
+        let page = client
+            .list_dynamic_fields(parent_sdk, None, None, None)
+            .collect(None)
+            .await
+            .map_err(|e| anyhow!("list_dynamic_fields({parent_id}) failed: {e}"))?;
 
-            if page.data.is_empty() {
-                break;
+        let fields = page.into_inner();
+        if fields.is_empty() {
+            continue;
+        }
+
+        // Collect the child object IDs. We always need `field_id` (the field
+        // object itself). For dynamic object fields the actual value lives in
+        // `child_id`; include both when present.
+        let mut child_ids: Vec<(ObjectId, Option<Version>)> = Vec::new();
+        for field in &fields {
+            if let Some(fid) = field.field_id.as_ref() {
+                let sdk: ObjectId = fid
+                    .try_into()
+                    .map_err(|e| anyhow!("invalid field_id: {e}"))?;
+                child_ids.push((sdk, None));
             }
-
-            // Collect the child object IDs
-            let child_ids: Vec<ObjectID> = page.data.iter().map(|info| info.object_id).collect();
-
-            // Fetch the actual child objects
-            let responses = client
-                .read_api()
-                .multi_get_object_with_options(child_ids, options.clone())
-                .await?;
-
-            for response in responses {
-                if let Some(data) = response.data {
-                    let obj: Object = data.try_into()?;
-                    // Also recurse into this child's dynamic fields
-                    queue.push(obj.id());
-                    all_children.push(obj);
-                }
+            if let Some(cid) = field.child_id.as_ref() {
+                let sdk: ObjectId = cid
+                    .try_into()
+                    .map_err(|e| anyhow!("invalid child_id: {e}"))?;
+                child_ids.push((sdk, None));
             }
+        }
 
-            if !page.has_next_page {
-                break;
-            }
-            cursor = page.next_cursor;
+        if child_ids.is_empty() {
+            continue;
+        }
+
+        // Fetch the child objects.
+        let proto_objs = client.get_objects(&child_ids, None).await?.into_inner();
+        for proto_obj in proto_objs {
+            let sdk_obj = proto_obj.object()?;
+            let obj: Object = sdk_obj.try_into()?;
+            // Also recurse into this child's dynamic fields.
+            queue.push(obj.id());
+            all_children.push(obj);
         }
     }
 
@@ -98,18 +109,18 @@ async fn main() -> Result<()> {
     // ---------------------------------------------------------------
     // Phase 1: Fetch everything from the network
     // ---------------------------------------------------------------
-    println!("Phase 1: Fetching objects from devnet...");
-    let client = IotaClientBuilder::default().build_devnet().await?;
+    println!("Phase 1: Fetching objects from devnet via gRPC...");
+    let client = GrpcClient::connect(DEVNET_GRPC).await?;
 
     // Bundle protocol version + RGP + epoch id + epoch timestamp into a
     // single helper call (the canonical way; same helper backs
-    // `JsonRpcExecutor::with_chain_info`).
-    let info = ChainInfo::fetch_from_json_rpc(&client).await?;
+    // `GrpcExecutor::with_chain_info`).
+    let info = ChainInfo::fetch_from_grpc(&client).await?;
     println!("  Protocol version: {:?}", info.protocol_version);
     println!("  Reference gas price: {}", info.reference_gas_price);
     println!("  Epoch: {}", info.epoch_id);
 
-    // Same staking transaction bytes as local_stake_inspect
+    // Same staking transaction bytes as the gRPC-backed staking flows.
     let tx_bytes_base64 = "AAADAAgAypo7AAAAAAEBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUBAAAAAAAAAAEAINqRtZV/6ONntsXV/L9IRp9ACpOV+VnDUxBwOyp4hRr+AgIAAQEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwtpb3RhX3N5c3RlbRFyZXF1ZXN0X2FkZF9zdGFrZQADAQEAAgAAAQIAIiK0ZqJDmevPXsDwSCCBKuIP6hA3xzbP7GCHU6o4tSIDGcvPD+/Tvw/dvzpb0UY9UJCRBlY/BhIGEGEBTRGPdHNaPxUAAAAAACA8sy5o+BES2kxKEnXM7cH94maytD+8aHx/lXKR0+CK2JbazvWIYMZYjungyM2qGZgUw31KLRDe8bX9f58VgNUkyBMAAAAAAAAgh/y1xeOPt7crDLnGZlW2jTzXSaAXYKtvOEISYwCZb63PFCwjsZFjUhgajd5ZSwA/VzogxQh/JEQL05VfqazefccTAAAAAAAAIJgclRy0Uq4ONHCvw1vi8JqDMorQT11j9eRPTBPeDMA/IiK0ZqJDmevPXsDwSCCBKuIP6hA3xzbP7GCHU6o4tSLoAwAAAAAAAGATQQAAAAAAAA==";
 
     let tx_bytes =
@@ -145,16 +156,9 @@ async fn main() -> Result<()> {
         println!("    - {id}");
     }
 
-    // Fetch all directly-referenced objects in a single batch RPC call
-    let options = IotaObjectDataOptions::full_content()
-        .with_bcs()
-        .with_owner()
-        .with_previous_transaction();
-
-    let responses = client
-        .read_api()
-        .multi_get_object_with_options(object_ids.clone(), options.clone())
-        .await?;
+    // Fetch all directly-referenced objects in a single batch gRPC call.
+    let refs: Vec<(ObjectId, Option<Version>)> = object_ids.iter().map(|id| (*id, None)).collect();
+    let proto_objects = client.get_objects(&refs, None).await?.into_inner();
 
     // Built-in framework packages (0x1, 0x2, 0x3, 0x107a, …) are needed as
     // transitive dependencies during execution.
@@ -162,20 +166,19 @@ async fn main() -> Result<()> {
     println!("  Loaded built-in framework packages into store");
 
     let mut fetched_count = 0;
-    for response in responses {
-        if let Some(data) = response.data {
-            let obj: Object = data.try_into()?;
-            println!("    Fetched {} (v{})", obj.id(), obj.version().as_u64(),);
-            store.insert(obj);
-            fetched_count += 1;
-        }
+    for proto_obj in proto_objects {
+        let sdk_obj = proto_obj.object()?;
+        let obj: Object = sdk_obj.try_into()?;
+        println!("    Fetched {} (v{})", obj.id(), obj.version().as_u64(),);
+        store.insert(obj);
+        fetched_count += 1;
     }
 
     // Recursively fetch dynamic field children of all fetched objects.
     // Complex transactions (like staking) access child objects of shared
     // objects (e.g., validator table entries inside IotaSystemState).
     println!("  Fetching dynamic field children recursively...");
-    let children = fetch_dynamic_field_children(&client, &object_ids, &options).await?;
+    let children = fetch_dynamic_field_children(&client, &object_ids).await?;
     println!("    Found {} child objects", children.len());
     for obj in &children {
         println!("    Child {} (v{})", obj.id(), obj.version().as_u64(),);

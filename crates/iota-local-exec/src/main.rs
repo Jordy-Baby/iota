@@ -19,15 +19,16 @@ mod call;
 mod output;
 mod packages;
 mod ptb;
+mod remote;
 
 use std::{collections::BTreeMap, path::PathBuf, process::ExitCode};
 
-use anyhow::{Result, bail};
+use anyhow::Result;
 use clap::{Parser, ValueEnum};
 use iota_local_executor::{
     DebugConfig, DebugSimulateResult, OfflineExecutor, ProfileSink, VmChecks,
 };
-use iota_protocol_config::{Chain, ProtocolConfig, ProtocolVersion};
+use iota_protocol_config::{Chain, ProtocolConfig};
 
 use crate::{
     args::parse_address,
@@ -148,14 +149,16 @@ struct Cli {
     #[arg(long)]
     no_debug_prints: bool,
 
-    // --- Remote state (v2) ---
-    /// Prefetch remote objects from this JSON-RPC endpoint.
-    /// **Not supported in v1.**
-    #[arg(long, value_name = "URL")]
-    remote_rpc: Option<String>,
+    // --- Remote state ---
+    /// Prefetch remote objects from this gRPC endpoint, and use the chain's
+    /// live protocol version / reference gas price / epoch when building the
+    /// executor. Requires `--remote-object` (or an `--account-object` /
+    /// `--gas-coin` that isn't in any `--package`).
+    #[arg(long = "remote-grpc", value_name = "URL")]
+    remote_grpc: Option<String>,
 
-    /// Remote object to prefetch: `0xID` or `0xID@VER`. **Not supported in
-    /// v1.**
+    /// Remote object to prefetch via the `--remote-grpc` endpoint: `0xID` for
+    /// the latest version or `0xID@VER` for a specific version. Repeatable.
     #[arg(long = "remote-object", value_name = "0xID[@VER]")]
     remote_objects: Vec<String>,
 
@@ -199,21 +202,23 @@ fn main() -> ExitCode {
 }
 
 fn run(cli: Cli) -> Result<u8> {
-    // --- Preflight: reject v2-only flags ---
-    if cli.remote_rpc.is_some() || !cli.remote_objects.is_empty() {
-        bail!(
-            "remote state fetching (--remote-rpc / --remote-object) is not supported in v1 — \
-             use the iota-local-executor Rust API directly"
-        );
-    }
+    // --- Resolve chain environment (either from a live gRPC endpoint or
+    //     synthesised defaults if running fully offline) ---
+    let env = remote::resolve_env(cli.remote_grpc.as_deref(), &cli.remote_objects)?;
+    let protocol_config = ProtocolConfig::get_for_version(env.protocol_version, Chain::Unknown);
 
     // --- Parse packages & build store ---
-    let protocol_config = ProtocolConfig::get_for_version(ProtocolVersion::MAX, Chain::Unknown);
     let packages::LoadedPackages {
         packages,
-        store,
+        mut store,
         aliases,
     } = packages::load(&cli.packages, &cli.named_addresses, &protocol_config)?;
+
+    // Install pre-fetched remote objects into the same store the offline
+    // executor will consult.
+    for obj in env.fetched_objects {
+        store.insert(obj);
+    }
 
     // --- Resolve --call and function signature ---
     let call_spec = cli
@@ -280,10 +285,10 @@ fn run(cli: Cli) -> Result<u8> {
     };
 
     let executor = OfflineExecutor::with_debug(
-        ProtocolVersion::MAX,
-        cli.gas_price,
-        0,
-        0,
+        env.protocol_version,
+        env.reference_gas_price.unwrap_or(cli.gas_price),
+        env.epoch_id,
+        env.epoch_timestamp_ms,
         store,
         debug_config,
     )

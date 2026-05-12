@@ -55,12 +55,12 @@ cargo run -p iota-local-exec -- <flags>
 
 ### Remote state
 
-| Flag                         | Status                  |
-| ---------------------------- | ----------------------- |
-| `--remote-rpc URL`           | **Not supported in v1** |
-| `--remote-object 0xID[@VER]` | **Not supported in v1** |
+| Flag                         | Default | Description                                                                                                                                                                  |
+| ---------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--remote-grpc URL`          | —       | Connect to a gRPC endpoint and snapshot live chain state (protocol version, reference gas price, current epoch) so the executor mirrors the chain instead of using defaults. |
+| `--remote-object 0xID[@VER]` | —       | Prefetch a remote object via `--remote-grpc`. Omit `@VER` for the latest version. Repeatable.                                                                                |
 
-Both flags are reserved for a future revision; passing either returns an error in v1. For now, prefetch objects in Rust tests using `JsonRpcExecutor` / `GrpcExecutor` directly.
+Without `--remote-grpc`, all referenced objects must come from `--package` (compiled in-process) or `--gas-coin` (auto-minted). With `--remote-grpc`, anything not loaded locally is fetched once and cached in the in-memory store before execution.
 
 ### Assertions (CI)
 

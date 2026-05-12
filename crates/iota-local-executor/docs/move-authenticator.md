@@ -11,7 +11,7 @@ Standard schemes (Ed25519, Secp256k1/r1, MultiSig) are verified cryptographicall
 ## End-to-end
 
 ```rust
-use iota_local_executor::{JsonRpcExecutor, SenderSignedData, VmChecks};
+use iota_local_executor::{GrpcExecutor, SenderSignedData, VmChecks};
 use iota_sdk_types::SharedObjectReference;
 use iota_types::{
     move_authenticator::MoveAuthenticator,
@@ -39,7 +39,7 @@ let move_auth = GenericSignature::MoveAuthenticator(MoveAuthenticator::new_v1(
 let signed = SenderSignedData::new(tx_data, vec![move_auth]);
 
 // 3. Simulate with signature verification on.
-let executor = JsonRpcExecutor::new(client).await?;
+let executor = GrpcExecutor::new(client).await?;
 let result = executor
     .simulate_signed_transaction(signed, VmChecks::Disabled)
     .await?;

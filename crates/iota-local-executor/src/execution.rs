@@ -1,7 +1,8 @@
 // Copyright (c) 2026 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
-//! Core execution logic shared by both `JsonRpcExecutor` and `OfflineExecutor`.
+//! Core execution logic shared by the networked executors and
+//! `OfflineExecutor`.
 
 use std::{
     collections::{BTreeMap, HashSet},
@@ -252,7 +253,7 @@ fn merge_profile_dir(dir: &std::path::Path) -> Option<ProfileOutput> {
 /// Run a transaction against the given store: validate, resolve objects, and
 /// execute.
 ///
-/// This is the single entry point for both `JsonRpcExecutor` and
+/// This is the single entry point for both the networked executors and
 /// `OfflineExecutor`.
 pub(crate) fn simulate(
     env: &ExecutionEnv,

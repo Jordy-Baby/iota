@@ -5,8 +5,8 @@
 //! objects.
 //!
 //! This example demonstrates a two-phase workflow:
-//! 1. **Fetch phase**: Connect to a node and fetch all objects referenced by
-//!    the transaction (plus protocol config and epoch info).
+//! 1. **Fetch phase**: Connect to a node via gRPC and fetch all objects
+//!    referenced by the transaction (plus protocol config and epoch info).
 //! 2. **Execute phase**: Disconnect from the network and execute the
 //!    transaction fully offline using `OfflineExecutor`.
 //!
@@ -23,9 +23,9 @@
 //!   cargo run --example offline_stake_inspect
 
 use anyhow::Result;
-use iota_json_rpc_types::IotaObjectDataOptions;
+use iota_grpc_client::Client as GrpcClient;
 use iota_local_executor::{ChainInfo, InMemoryStore, OfflineExecutor, VmChecks};
-use iota_sdk::IotaClientBuilder;
+use iota_sdk_types::ObjectId;
 use iota_types::{
     base_types::ObjectID,
     effects::TransactionEffectsAPI,
@@ -33,23 +33,25 @@ use iota_types::{
     transaction::{TransactionData, TransactionDataAPI},
 };
 
+const DEVNET_GRPC: &str = "https://api.devnet.iota.cafe";
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // ---------------------------------------------------------------
     // Phase 1: Fetch everything from the network
     // ---------------------------------------------------------------
-    println!("Phase 1: Fetching objects from devnet...");
-    let client = IotaClientBuilder::default().build_devnet().await?;
+    println!("Phase 1: Fetching objects from devnet via gRPC...");
+    let client = GrpcClient::connect(DEVNET_GRPC).await?;
 
     // Bundle protocol version + RGP + epoch id + epoch timestamp into a
     // single helper call (one round-trip per field on devnet, but the helper
-    // is the canonical way and parallels `JsonRpcExecutor::with_chain_info`).
-    let info = ChainInfo::fetch_from_json_rpc(&client).await?;
+    // is the canonical way and parallels `GrpcExecutor::with_chain_info`).
+    let info = ChainInfo::fetch_from_grpc(&client).await?;
     println!("  Protocol version: {:?}", info.protocol_version);
     println!("  Reference gas price: {}", info.reference_gas_price);
     println!("  Epoch: {}", info.epoch_id);
 
-    // Same staking transaction bytes as local_stake_inspect
+    // Same staking transaction bytes as the gRPC-backed staking flows.
     let tx_bytes_base64 = "AAADAAgAypo7AAAAAAEBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUBAAAAAAAAAAEAINqRtZV/6ONntsXV/L9IRp9ACpOV+VnDUxBwOyp4hRr+AgIAAQEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwtpb3RhX3N5c3RlbRFyZXF1ZXN0X2FkZF9zdGFrZQADAQEAAgAAAQIAIiK0ZqJDmevPXsDwSCCBKuIP6hA3xzbP7GCHU6o4tSIDGcvPD+/Tvw/dvzpb0UY9UJCRBlY/BhIGEGEBTRGPdHNaPxUAAAAAACA8sy5o+BES2kxKEnXM7cH94maytD+8aHx/lXKR0+CK2JbazvWIYMZYjungyM2qGZgUw31KLRDe8bX9f58VgNUkyBMAAAAAAAAgh/y1xeOPt7crDLnGZlW2jTzXSaAXYKtvOEISYwCZb63PFCwjsZFjUhgajd5ZSwA/VzogxQh/JEQL05VfqazefccTAAAAAAAAIJgclRy0Uq4ONHCvw1vi8JqDMorQT11j9eRPTBPeDMA/IiK0ZqJDmevPXsDwSCCBKuIP6hA3xzbP7GCHU6o4tSLoAwAAAAAAAGATQQAAAAAAAA==";
 
     let tx_bytes =
@@ -85,24 +87,17 @@ async fn main() -> Result<()> {
         println!("    - {id}");
     }
 
-    // Fetch all objects in a single batch RPC call
-    let options = IotaObjectDataOptions::full_content()
-        .with_bcs()
-        .with_owner()
-        .with_previous_transaction();
-
-    let responses = client
-        .read_api()
-        .multi_get_object_with_options(object_ids, options)
-        .await?;
+    // Fetch all objects in a single batch gRPC call (latest versions).
+    let refs: Vec<(ObjectId, Option<iota_sdk_types::Version>)> =
+        object_ids.iter().map(|id| (*id, None)).collect();
+    let proto_objects = client.get_objects(&refs, None).await?.into_inner();
 
     let mut store = InMemoryStore::new();
-    for response in responses {
-        if let Some(data) = response.data {
-            let obj: Object = data.try_into()?;
-            println!("    Fetched {} (v{})", obj.id(), obj.version().as_u64());
-            store.insert(obj);
-        }
+    for proto_obj in proto_objects {
+        let sdk_obj = proto_obj.object()?;
+        let obj: Object = sdk_obj.try_into()?;
+        println!("    Fetched {} (v{})", obj.id(), obj.version().as_u64());
+        store.insert(obj);
     }
 
     // ---------------------------------------------------------------

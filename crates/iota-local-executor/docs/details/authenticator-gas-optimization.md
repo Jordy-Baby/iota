@@ -12,9 +12,9 @@ Prerequisites:
 Combine the two: enable profiling + tracing on the executor, then run `simulate_signed_transaction_with_debug`. The authenticator function and the PTB body each run through the VM, and the returned profile covers both.
 
 ```rust
-use iota_local_executor::{DebugConfig, JsonRpcExecutor, ProfileOutput, ProfileSink, VmChecks};
+use iota_local_executor::{DebugConfig, GrpcExecutor, ProfileOutput, ProfileSink, VmChecks};
 
-let executor = JsonRpcExecutor::with_debug(
+let executor = GrpcExecutor::with_debug(
     client,
     DebugConfig {
         profile: Some(ProfileSink::Capture),

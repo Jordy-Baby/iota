@@ -2,16 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! End-to-end tests that spin up a local test cluster and compare transaction
-//! simulation results across the different executor backends (JSON-RPC,
-//! gRPC) and against the node's own dry-run API.
+//! simulation results from the gRPC executor against the node's own dry-run
+//! API.
 
 use std::{path::PathBuf, str::FromStr};
 
 use iota_json_rpc_types::IotaTransactionBlockEffectsAPI;
 use iota_keys::keystore::AccountKeystore;
 use iota_local_executor::{
-    DebugConfig, GrpcExecutor, JsonRpcExecutor, ObjectFetchMode, ProfileOutput, ProfileSink,
-    SenderSignedData, VmChecks,
+    DebugConfig, GrpcExecutor, ObjectFetchMode, ProfileOutput, ProfileSink, SenderSignedData,
+    VmChecks,
 };
 use iota_sdk_types::SharedObjectReference;
 use iota_test_transaction_builder::{TestTransactionBuilder, publish_package};
@@ -87,8 +87,8 @@ impl SimulationSummary {
 // Tests
 // ---------------------------------------------------------------------------
 
-/// Simulate a simple IOTA transfer via JsonRpcExecutor, GrpcExecutor, and the
-/// node's dry-run API, then compare that all three produce the same result.
+/// Simulate a simple IOTA transfer via GrpcExecutor and the node's dry-run
+/// API, then compare that both produce the same result.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn compare_executors_transfer() {
     // Spin up a local test cluster with gRPC enabled.
@@ -138,40 +138,7 @@ async fn compare_executors_transfer() {
     };
     assert!(node_summary.success, "node dry-run should succeed");
 
-    // 2. JsonRpcExecutor (JSON-RPC backend).
-    let rpc_url = test_cluster.rpc_url().to_string();
-    let iota_client = iota_sdk::IotaClientBuilder::default()
-        .build(&rpc_url)
-        .await
-        .expect("should connect to JSON-RPC");
-
-    let local = JsonRpcExecutor::new(iota_client)
-        .await
-        .expect("JsonRpcExecutor::new should succeed");
-
-    let local_result = local
-        .simulate_transaction(tx_data.clone(), VmChecks::Enabled)
-        .await
-        .expect("JsonRpcExecutor simulate should succeed");
-
-    let local_summary = {
-        let effects = &local_result.effects;
-        SimulationSummary {
-            success: effects.status().is_success(),
-            gas: effects.gas_cost_summary().clone(),
-            created_count: effects.created().len(),
-            mutated_count: effects.mutated().len(),
-            deleted_count: effects.deleted().len(),
-            events_count: local_result
-                .events
-                .as_ref()
-                .map(|e| e.data.len())
-                .unwrap_or(0),
-        }
-    };
-    assert!(local_summary.success, "JsonRpcExecutor should succeed");
-
-    // 3. GrpcExecutor (gRPC backend).
+    // 2. GrpcExecutor (gRPC backend).
     let grpc_url = test_cluster.grpc_url();
     let grpc_client = iota_grpc_client::Client::connect(grpc_url)
         .await
@@ -203,15 +170,13 @@ async fn compare_executors_transfer() {
     };
     assert!(grpc_summary.success, "GrpcExecutor should succeed");
 
-    // Compare all three.
-    node_summary.assert_matches(&local_summary, "node", "JsonRpcExecutor");
     node_summary.assert_matches(&grpc_summary, "node", "GrpcExecutor");
 }
 
-/// Simulate a dev-inspect (VmChecks::Disabled) transfer via both executors and
-/// verify they agree.
+/// Sanity-check that the gRPC executor produces a successful dev-inspect
+/// simulation (`VmChecks::Disabled`).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn compare_executors_dev_inspect() {
+async fn grpc_executor_dev_inspect() {
     let test_cluster = TestClusterBuilder::new()
         .with_fullnode_enable_grpc_api(true)
         .with_num_validators(1)
@@ -233,27 +198,6 @@ async fn compare_executors_dev_inspect() {
         .transfer_iota(Some(500_000), recipient)
         .build();
 
-    // JsonRpcExecutor with VmChecks::Disabled (dev-inspect mode).
-    let rpc_url = test_cluster.rpc_url().to_string();
-    let iota_client = iota_sdk::IotaClientBuilder::default()
-        .build(&rpc_url)
-        .await
-        .unwrap();
-
-    let local = JsonRpcExecutor::new(iota_client)
-        .await
-        .expect("JsonRpcExecutor::new should succeed");
-
-    let local_result = local
-        .simulate_transaction(tx_data.clone(), VmChecks::Disabled)
-        .await
-        .expect("JsonRpcExecutor dev-inspect should succeed");
-    assert!(
-        local_result.effects.status().is_success(),
-        "JsonRpcExecutor dev-inspect should succeed"
-    );
-
-    // GrpcExecutor with VmChecks::Disabled.
     let grpc_client = iota_grpc_client::Client::connect(test_cluster.grpc_url())
         .await
         .unwrap();
@@ -270,28 +214,12 @@ async fn compare_executors_dev_inspect() {
         grpc_result.effects.status().is_success(),
         "GrpcExecutor dev-inspect should succeed"
     );
-
-    // Both should agree on gas costs and object changes.
-    let local_gas = local_result.effects.gas_cost_summary();
-    let grpc_gas = grpc_result.effects.gas_cost_summary();
-    assert_eq!(local_gas, grpc_gas, "gas costs should match");
-
-    assert_eq!(
-        local_result.effects.created().len(),
-        grpc_result.effects.created().len(),
-        "created count should match"
-    );
-    assert_eq!(
-        local_result.effects.mutated().len(),
-        grpc_result.effects.mutated().len(),
-        "mutated count should match"
-    );
 }
 
-/// Verify that `ObjectFetchMode::UseLatestVersions` also produces a successful
-/// simulation for both executors.
+/// Verify that `ObjectFetchMode::UseLatestVersions` produces a successful
+/// simulation on the gRPC executor.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn compare_executors_latest_version_mode() {
+async fn grpc_executor_latest_version_mode() {
     let test_cluster = TestClusterBuilder::new()
         .with_fullnode_enable_grpc_api(true)
         .with_num_validators(1)
@@ -313,28 +241,6 @@ async fn compare_executors_latest_version_mode() {
         .transfer_iota(Some(100_000), recipient)
         .build();
 
-    // JsonRpcExecutor with UseLatestVersions.
-    let rpc_url = test_cluster.rpc_url().to_string();
-    let iota_client = iota_sdk::IotaClientBuilder::default()
-        .build(&rpc_url)
-        .await
-        .unwrap();
-
-    let local = JsonRpcExecutor::new(iota_client)
-        .await
-        .expect("JsonRpcExecutor::new should succeed")
-        .with_fetch_mode(ObjectFetchMode::UseLatestVersions);
-
-    let local_result = local
-        .simulate_transaction(tx_data.clone(), VmChecks::Disabled)
-        .await
-        .expect("JsonRpcExecutor latest-version simulate should succeed");
-    assert!(
-        local_result.effects.status().is_success(),
-        "JsonRpcExecutor latest-version should succeed"
-    );
-
-    // GrpcExecutor with UseLatestVersions.
     let grpc_client = iota_grpc_client::Client::connect(test_cluster.grpc_url())
         .await
         .unwrap();
@@ -352,19 +258,12 @@ async fn compare_executors_latest_version_mode() {
         grpc_result.effects.status().is_success(),
         "GrpcExecutor latest-version should succeed"
     );
-
-    // Both should produce the same gas costs.
-    assert_eq!(
-        local_result.effects.gas_cost_summary(),
-        grpc_result.effects.gas_cost_summary(),
-        "gas costs should match in latest-version mode"
-    );
 }
 
-/// Simulate a Move call (staking) that involves shared objects, and compare
-/// results across executors.
+/// Simulate a Move call (staking) that involves shared objects via the gRPC
+/// executor and compare against the node's dry-run.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn compare_executors_staking_move_call() {
+async fn grpc_executor_staking_move_call() {
     let test_cluster = TestClusterBuilder::new()
         .with_fullnode_enable_grpc_api(true)
         .with_num_validators(1)
@@ -419,25 +318,8 @@ async fn compare_executors_staking_move_call() {
     );
     assert!(node_success, "node dry-run staking should succeed");
 
-    // JsonRpcExecutor — use dev-inspect mode since the staking call involves
+    // GrpcExecutor — use dev-inspect mode since the staking call involves
     // shared objects whose versions may shift between fetch and simulate.
-    let rpc_url = test_cluster.rpc_url().to_string();
-    let iota_client = iota_sdk::IotaClientBuilder::default()
-        .build(&rpc_url)
-        .await
-        .unwrap();
-    let local = JsonRpcExecutor::new(iota_client).await.unwrap();
-    let local_result = local
-        .simulate_transaction(tx_data.clone(), VmChecks::Disabled)
-        .await
-        .expect("JsonRpcExecutor staking should succeed");
-    assert!(
-        local_result.effects.status().is_success(),
-        "JsonRpcExecutor staking should succeed: {:?}",
-        local_result.effects.status()
-    );
-
-    // GrpcExecutor.
     let grpc_client = iota_grpc_client::Client::connect(test_cluster.grpc_url())
         .await
         .unwrap();
@@ -451,18 +333,6 @@ async fn compare_executors_staking_move_call() {
         "GrpcExecutor staking should succeed: {:?}",
         grpc_result.effects.status()
     );
-
-    // Both local executors should agree on gas and object counts.
-    assert_eq!(
-        local_result.effects.gas_cost_summary(),
-        grpc_result.effects.gas_cost_summary(),
-        "staking gas costs should match"
-    );
-    assert_eq!(
-        local_result.effects.created().len(),
-        grpc_result.effects.created().len(),
-        "staking created count should match"
-    );
 }
 
 // ---------------------------------------------------------------------------
@@ -473,6 +343,7 @@ async fn compare_executors_staking_move_call() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn simulate_signed_transaction_valid_signature() {
     let test_cluster = TestClusterBuilder::new()
+        .with_fullnode_enable_grpc_api(true)
         .with_num_validators(1)
         .build()
         .await;
@@ -497,13 +368,11 @@ async fn simulate_signed_transaction_valid_signature() {
     let signed_data: SenderSignedData = signed_tx.into_data();
 
     // Build executor and simulate with signature verification.
-    let rpc_url = test_cluster.rpc_url().to_string();
-    let iota_client = iota_sdk::IotaClientBuilder::default()
-        .build(&rpc_url)
+    let grpc_client = iota_grpc_client::Client::connect(test_cluster.grpc_url())
         .await
         .unwrap();
 
-    let local = JsonRpcExecutor::new(iota_client).await.unwrap();
+    let local = GrpcExecutor::new(grpc_client).await.unwrap();
 
     let result = local
         .simulate_signed_transaction(signed_data, VmChecks::Enabled)
@@ -522,6 +391,7 @@ async fn simulate_signed_transaction_valid_signature() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn simulate_signed_transaction_invalid_signature() {
     let test_cluster = TestClusterBuilder::new()
+        .with_fullnode_enable_grpc_api(true)
         .with_num_validators(1)
         .build()
         .await;
@@ -547,13 +417,11 @@ async fn simulate_signed_transaction_invalid_signature() {
     let bad_signed_data: SenderSignedData = bad_signed_tx.into_data();
 
     // Build executor and attempt simulation.
-    let rpc_url = test_cluster.rpc_url().to_string();
-    let iota_client = iota_sdk::IotaClientBuilder::default()
-        .build(&rpc_url)
+    let grpc_client = iota_grpc_client::Client::connect(test_cluster.grpc_url())
         .await
         .unwrap();
 
-    let local = JsonRpcExecutor::new(iota_client).await.unwrap();
+    let local = GrpcExecutor::new(grpc_client).await.unwrap();
 
     let result = local
         .simulate_signed_transaction(bad_signed_data, VmChecks::Enabled)
@@ -699,6 +567,7 @@ fn craft_aa_simple_ptb(
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn simulate_signed_transaction_move_authenticator_valid() {
     let mut test_cluster = TestClusterBuilder::new()
+        .with_fullnode_enable_grpc_api(true)
         .with_num_validators(1)
         .build()
         .await;
@@ -750,13 +619,11 @@ async fn simulate_signed_transaction_move_authenticator_valid() {
     let signed_data = SenderSignedData::new(tx_data, vec![move_auth]);
 
     // 5. Simulate via local executor with signature verification.
-    let rpc_url = test_cluster.rpc_url().to_string();
-    let iota_client = iota_sdk::IotaClientBuilder::default()
-        .build(&rpc_url)
+    let grpc_client = iota_grpc_client::Client::connect(test_cluster.grpc_url())
         .await
         .unwrap();
 
-    let local = JsonRpcExecutor::new(iota_client).await.unwrap();
+    let local = GrpcExecutor::new(grpc_client).await.unwrap();
     let result = local
         .simulate_signed_transaction(signed_data, VmChecks::Disabled)
         .await
@@ -776,6 +643,7 @@ async fn simulate_signed_transaction_move_authenticator_valid() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn simulate_signed_transaction_move_authenticator_invalid_args() {
     let mut test_cluster = TestClusterBuilder::new()
+        .with_fullnode_enable_grpc_api(true)
         .with_num_validators(1)
         .build()
         .await;
@@ -833,13 +701,11 @@ async fn simulate_signed_transaction_move_authenticator_invalid_args() {
     let signed_data = SenderSignedData::new(tx_data, vec![move_auth]);
 
     // 5. Simulate via local executor.
-    let rpc_url = test_cluster.rpc_url().to_string();
-    let iota_client = iota_sdk::IotaClientBuilder::default()
-        .build(&rpc_url)
+    let grpc_client = iota_grpc_client::Client::connect(test_cluster.grpc_url())
         .await
         .unwrap();
 
-    let local = JsonRpcExecutor::new(iota_client).await.unwrap();
+    let local = GrpcExecutor::new(grpc_client).await.unwrap();
     let result = local
         .simulate_signed_transaction(signed_data, VmChecks::Disabled)
         .await
@@ -863,6 +729,7 @@ async fn simulate_signed_transaction_move_authenticator_invalid_args() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn simulate_signed_transaction_move_authenticator_with_debug() {
     let mut test_cluster = TestClusterBuilder::new()
+        .with_fullnode_enable_grpc_api(true)
         .with_num_validators(1)
         .build()
         .await;
@@ -909,14 +776,12 @@ async fn simulate_signed_transaction_move_authenticator_with_debug() {
     ));
     let signed_data = SenderSignedData::new(tx_data, vec![move_auth]);
 
-    let rpc_url = test_cluster.rpc_url().to_string();
-    let iota_client = iota_sdk::IotaClientBuilder::default()
-        .build(&rpc_url)
+    let grpc_client = iota_grpc_client::Client::connect(test_cluster.grpc_url())
         .await
         .unwrap();
 
-    let local = JsonRpcExecutor::with_debug(
-        iota_client,
+    let local = GrpcExecutor::with_debug(
+        grpc_client,
         DebugConfig {
             profile: Some(ProfileSink::Capture),
             trace: true,

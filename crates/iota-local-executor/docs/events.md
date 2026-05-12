@@ -62,7 +62,7 @@ for decoded in executor.decode_events(events) {
 
 ## Across executor backends
 
-`decode_events` works identically on `OfflineExecutor`, `JsonRpcExecutor`, `GrpcExecutor`, and `GraphqlExecutor`. Each one uses its own object store for layout resolution. If a custom/non-framework package emitted the event, make sure that package is either installed into the store (`LocalPackage::install_into*`) or fetchable from the remote.
+`decode_events` works identically on `OfflineExecutor`, `GrpcExecutor`, and `GraphqlExecutor`. Each one uses its own object store for layout resolution. If a custom/non-framework package emitted the event, make sure that package is either installed into the store (`LocalPackage::install_into*`) or fetchable from the remote.
 
 ## Examples and tests
 

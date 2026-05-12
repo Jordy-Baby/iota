@@ -4,10 +4,9 @@
 //! [`GrpcExecutor`] — fetches objects from a remote node via gRPC and executes
 //! locally.
 //!
-//! All methods shared with [`crate::JsonRpcExecutor`] and
-//! [`crate::GraphqlExecutor`] are emitted by the
-//! [`networked_executor_methods!`] macro — see
-//! [`crate::networked_helpers`] for the full surface.
+//! All methods shared with [`crate::GraphqlExecutor`] are emitted by the
+//! [`networked_executor_methods!`] macro — see [`crate::networked_helpers`]
+//! for the full surface.
 
 use anyhow::Result;
 use iota_grpc_client::Client as GrpcClient;
@@ -25,8 +24,12 @@ use crate::{
 /// remote node via gRPC.
 ///
 /// The executor owns a persistent [`GrpcStore`] that caches fetched objects
-/// across simulation calls. See [`crate::JsonRpcExecutor`] for the caching
-/// model.
+/// (packages, immutable objects, and mutable objects from the last fetch)
+/// across [`Self::simulate_transaction`] calls. Framework packages and other
+/// immutable objects are therefore fetched at most once per executor. Call
+/// [`Self::clear_cache`] to drop the cache when staleness matters, or use
+/// [`Self::simulate_transaction_with_debug_using`] with a caller-supplied
+/// store for isolated one-off runs.
 pub struct GrpcExecutor {
     client: GrpcClient,
     env: ExecutionEnv,

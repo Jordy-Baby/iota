@@ -9,7 +9,7 @@ Run a Move transaction through the same VM a node uses, locally, to inspect its 
 
 ## End-to-end: transaction bytes → effects
 
-Given a base64-encoded transaction (the same format the node's JSON-RPC API accepts), run it locally with the `OfflineExecutor` and inspect the result:
+Given a base64-encoded BCS transaction payload, run it locally with the `OfflineExecutor` and inspect the result:
 
 ```rust
 use iota_framework::BuiltInFramework;
@@ -49,10 +49,9 @@ if let Ok(cmd_results) = &result.execution_result {
 
 ## Against a live node
 
-If you need object state from a real chain, swap `OfflineExecutor` for `JsonRpcExecutor` / `GrpcExecutor` / `GraphqlExecutor`. The rest of the workflow is identical; the networked executor fetches objects transparently.
+If you need object state from a real chain, swap `OfflineExecutor` for `GrpcExecutor` or `GraphqlExecutor`. The rest of the workflow is identical; the networked executor fetches objects transparently.
 
 ## Examples
 
 - [../examples/offline_dev_inspect.rs](../examples/offline_dev_inspect.rs) — framework-only pure function call (blake2b256), no objects
-- [../examples/local_dev_inspect.rs](../examples/local_dev_inspect.rs) — same call via JSON-RPC against a live endpoint
-- [../examples/local_stake_inspect.rs](../examples/local_stake_inspect.rs) — staking transaction with shared + owned objects
+- [../examples/offline_stake_inspect.rs](../examples/offline_stake_inspect.rs) — staking transaction with shared + owned objects, fetched via gRPC then run offline

@@ -4,10 +4,9 @@
 //! [`GraphqlExecutor`] — fetches objects from a remote node via GraphQL and
 //! executes locally.
 //!
-//! All methods shared with [`crate::JsonRpcExecutor`] and
-//! [`crate::GrpcExecutor`] are emitted by the
-//! [`networked_executor_methods!`] macro — see
-//! [`crate::networked_helpers`] for the full surface.
+//! All methods shared with [`crate::GrpcExecutor`] are emitted by the
+//! [`networked_executor_methods!`] macro — see [`crate::networked_helpers`]
+//! for the full surface.
 
 use anyhow::Result;
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
@@ -25,7 +24,7 @@ use crate::{
 /// remote node via GraphQL.
 ///
 /// The executor owns a persistent [`GraphqlStore`] that caches fetched
-/// objects across simulation calls. See [`crate::JsonRpcExecutor`] for the
+/// objects across simulation calls. See [`crate::GrpcExecutor`] for the
 /// caching model.
 pub struct GraphqlExecutor {
     client: SimpleClient,

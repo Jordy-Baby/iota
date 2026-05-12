@@ -4,10 +4,9 @@
 //! A generic caching object store parameterised by a fetcher strategy.
 //!
 //! [`CachingStore<F>`] holds an in-memory cache and delegates on-demand fetches
-//! to an [`ObjectFetcher`] implementation. Three built-in fetchers cover the
+//! to an [`ObjectFetcher`] implementation. Two built-in fetchers cover the
 //! supported transport backends:
 //!
-//! - [`JsonRpcFetcher`] — fetches via JSON-RPC (`IotaClient`)
 //! - [`GrpcFetcher`] — fetches via gRPC (`iota_grpc_client::Client`)
 //! - [`GraphqlFetcher`] — fetches via GraphQL (`SimpleClient`)
 
@@ -19,8 +18,6 @@ use std::{
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use iota_graphql_rpc_client::simple_client::SimpleClient;
 use iota_grpc_client::Client as GrpcClient;
-use iota_json_rpc_types::IotaObjectDataOptions;
-use iota_sdk::IotaClient;
 use iota_sdk_types::ObjectId;
 use iota_types::{
     base_types::{ObjectID, SequenceNumber, VersionNumber},
@@ -221,49 +218,6 @@ impl<F: ObjectFetcher> ChildObjectResolver for CachingStore<F> {
 }
 
 // ---------------------------------------------------------------------------
-// JsonRpcFetcher
-// ---------------------------------------------------------------------------
-
-/// Fetches objects from a remote IOTA node via JSON-RPC.
-pub struct JsonRpcFetcher(pub(crate) IotaClient);
-
-impl ObjectFetcher for JsonRpcFetcher {
-    fn fetch_object(&self, id: &ObjectID) -> Option<Object> {
-        let client = self.0.clone();
-        let id = *id;
-        let result = tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async {
-                let options = IotaObjectDataOptions::full_content()
-                    .with_bcs()
-                    .with_owner()
-                    .with_previous_transaction();
-                client.read_api().get_object_with_options(id, options).await
-            })
-        });
-
-        match result {
-            Ok(response) => {
-                if let Some(data) = response.data {
-                    match <iota_json_rpc_types::IotaObjectData as TryInto<Object>>::try_into(data) {
-                        Ok(obj) => Some(obj),
-                        Err(e) => {
-                            tracing::warn!("Failed to convert object {id}: {e}");
-                            None
-                        }
-                    }
-                } else {
-                    None
-                }
-            }
-            Err(e) => {
-                tracing::warn!("Failed to fetch object {id} from remote: {e}");
-                None
-            }
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
 // GrpcFetcher
 // ---------------------------------------------------------------------------
 
@@ -351,8 +305,6 @@ impl ObjectFetcher for GraphqlFetcher {
 // Type aliases (preserve public API)
 // ---------------------------------------------------------------------------
 
-/// An object store backed by JSON-RPC.
-pub type JsonRpcStore = CachingStore<JsonRpcFetcher>;
 /// An object store backed by gRPC.
 pub type GrpcStore = CachingStore<GrpcFetcher>;
 /// An object store backed by GraphQL.

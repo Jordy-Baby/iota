@@ -107,7 +107,7 @@ assert!(result.effects.status().is_success());
 For mixed workflows (local synthetic package + remotely-fetched inputs), use a networked executor and `install_into_caching`:
 
 ```rust
-let executor = JsonRpcExecutor::new(client).await?;
+let executor = GrpcExecutor::new(client).await?;
 pkg.install_into_caching(executor.store());   // 0x42 shadows any remote
 let result = executor.simulate_transaction(tx, VmChecks::Disabled).await?;
 ```

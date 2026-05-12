@@ -1,8 +1,8 @@
 // Copyright (c) 2026 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
-//! Shared implementation surface for the three networked executors
-//! (`JsonRpcExecutor`, `GrpcExecutor`, `GraphqlExecutor`).
+//! Shared implementation surface for the two networked executors
+//! (`GrpcExecutor`, `GraphqlExecutor`).
 //!
 //! Each networked executor wraps a transport-specific client + a
 //! [`CachingStore`](crate::caching_store::CachingStore) populated by a
@@ -11,12 +11,12 @@
 //! decoding, and the eight `simulate*` methods — is byte-identical across
 //! backends.
 //!
-//! Rather than triplicate those methods (which is precisely what we used to
-//! do), the per-backend `impl` blocks call [`networked_executor_methods!`]
-//! with their transport types as parameters and the macro expands the shared
-//! surface in place. Each executor keeps its own constructor (`new`,
-//! `with_debug` — the part that needs transport-specific `ChainInfo` fetching)
-//! and prefetch logic (the part that issues actual network calls).
+//! Rather than duplicate those methods, the per-backend `impl` blocks call
+//! [`networked_executor_methods!`] with their transport types as parameters
+//! and the macro expands the shared surface in place. Each executor keeps its
+//! own constructor (`new`, `with_debug` — the part that needs
+//! transport-specific `ChainInfo` fetching) and prefetch logic (the part that
+//! issues actual network calls).
 
 /// Emit the shared method surface for a networked executor (`store`,
 /// `new_store`, `clear_cache`, `decode_events`, `set_fetch_mode`,
@@ -24,10 +24,10 @@
 ///
 /// Arguments:
 ///
-/// - `$Client` — the transport client type (e.g. `iota_sdk::IotaClient`).
-/// - `$Fetcher` — the tuple-struct fetcher (e.g. `JsonRpcFetcher`), expected to
-///   be constructible as `$Fetcher(client.clone())`.
-/// - `$Store` — the concrete `CachingStore` alias (e.g. `JsonRpcStore`).
+/// - `$Client` — the transport client type (e.g. `iota_grpc_client::Client`).
+/// - `$Fetcher` — the tuple-struct fetcher (e.g. `GrpcFetcher`), expected to be
+///   constructible as `$Fetcher(client.clone())`.
+/// - `$Store` — the concrete `CachingStore` alias (e.g. `GrpcStore`).
 ///
 /// The executor type must:
 ///

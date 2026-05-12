@@ -113,7 +113,9 @@ fn lower_into_builder(
         }
         ParsedValue::Object(id) => {
             let obj = store.get_object(&id).ok_or_else(|| {
-                anyhow!("object {id} not found in store (pass --package or --remote-object)")
+                anyhow!(
+                    "object {id} not found in store (pass --package, or --remote-grpc URL plus --remote-object {id})"
+                )
             })?;
             let call_arg = match obj.owner {
                 Owner::Shared(initial_shared_version) => CallArg::Shared(SharedObjectRef {

@@ -3,18 +3,18 @@
 
 //! Cached chain-environment information for reuse across executor instances.
 //!
-//! Each networked executor (`JsonRpcExecutor`, `GrpcExecutor`,
-//! `GraphqlExecutor`) fetches four pieces of chain state when it is
-//! constructed: the protocol version, reference gas price, current epoch id,
-//! and epoch-start timestamp. Fetching these four values per executor is
-//! wasteful when callers create many executors in a loop (e.g. one per
-//! transaction in a batch). [`ChainInfo`] captures the four values in a
-//! small `Copy` bundle that can be fetched once and reused:
+//! Each networked executor (`GrpcExecutor`, `GraphqlExecutor`) fetches four
+//! pieces of chain state when it is constructed: the protocol version,
+//! reference gas price, current epoch id, and epoch-start timestamp. Fetching
+//! these four values per executor is wasteful when callers create many
+//! executors in a loop (e.g. one per transaction in a batch). [`ChainInfo`]
+//! captures the four values in a small `Copy` bundle that can be fetched once
+//! and reused:
 //!
 //! ```ignore
-//! let info = ChainInfo::fetch_from_json_rpc(&client).await?;
+//! let info = ChainInfo::fetch_from_grpc(&client).await?;
 //! for tx in txs {
-//!     let executor = JsonRpcExecutor::with_chain_info(client.clone(), info)?;
+//!     let executor = GrpcExecutor::with_chain_info(client.clone(), info)?;
 //!     let r = executor.simulate_transaction(tx, VmChecks::Disabled).await?;
 //!     …
 //! }
@@ -39,30 +39,6 @@ pub struct ChainInfo {
 }
 
 impl ChainInfo {
-    /// Fetch the four values from a JSON-RPC endpoint.
-    pub async fn fetch_from_json_rpc(client: &iota_sdk::IotaClient) -> Result<Self> {
-        let reference_gas_price = client.read_api().get_reference_gas_price().await?;
-        let protocol_version = client
-            .read_api()
-            .get_protocol_config(None)
-            .await?
-            .protocol_version;
-        let latest_checkpoint = client
-            .read_api()
-            .get_latest_checkpoint_sequence_number()
-            .await?;
-        let checkpoint = client
-            .read_api()
-            .get_checkpoint(latest_checkpoint.into())
-            .await?;
-        Ok(Self {
-            protocol_version,
-            reference_gas_price,
-            epoch_id: checkpoint.epoch,
-            epoch_timestamp_ms: checkpoint.timestamp_ms,
-        })
-    }
-
     /// Fetch the four values from a gRPC endpoint.
     pub async fn fetch_from_grpc(client: &iota_grpc_client::Client) -> Result<Self> {
         let epoch = client

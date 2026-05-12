@@ -2,7 +2,7 @@
 
 Run IOTA Move transactions **on the client side**, without sending them to a node.
 
-Given transaction bytes in the same format the node's JSON-RPC API accepts, this crate fetches the required objects, executes the transaction through the same Move VM a full node uses, and returns the effects, events, and return values — all locally.
+Given transaction bytes in standard BCS format, this crate fetches the required objects, executes the transaction through the same Move VM a full node uses, and returns the effects, events, and return values — all locally.
 
 ## Executors
 
@@ -11,11 +11,10 @@ Pick the backend that matches how you get at objects:
 | Executor          | Backend                    | Example                                                                            |
 | ----------------- | -------------------------- | ---------------------------------------------------------------------------------- |
 | `OfflineExecutor` | In-memory only, no network | [examples/offline_dev_inspect.rs](examples/offline_dev_inspect.rs)                 |
-| `JsonRpcExecutor` | JSON-RPC                   | [examples/local_dev_inspect.rs](examples/local_dev_inspect.rs)                     |
 | `GrpcExecutor`    | gRPC                       | [tests/e2e_executor_comparison.rs](tests/e2e_executor_comparison.rs)               |
 | `GraphqlExecutor` | GraphQL                    | API mirrors `GrpcExecutor`; see [src/graphql_executor.rs](src/graphql_executor.rs) |
 
-The three networked executors pre-fetch input objects in batch, cache them across calls, and lazily load anything the VM pulls in during execution.
+The two networked executors pre-fetch input objects in batch, cache them across calls, and lazily load anything the VM pulls in during execution.
 
 ## Related crates
 
