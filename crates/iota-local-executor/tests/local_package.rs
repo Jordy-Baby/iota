@@ -92,17 +92,18 @@ fn greet_debug_prints_captured_into_artifacts() -> Result<()> {
         !out.artifacts.debug_prints.is_empty(),
         "structured_debug_capture must populate debug_prints"
     );
-    // The fixture prints a byte-string literal; the native formats bytes as
-    // hex. Assert the line starts with our `[debug] ` prefix and contains
-    // the hex of "hello".
+    // The fixture wraps the bytes in `std::string::String`, which the Move
+    // VM's debug printer renders as a quoted UTF-8 string. Assert we see the
+    // exact `[debug] "…"` line.
+    let expected = "[debug] \"hello from iota-local-executor\"";
     let hit = out
         .artifacts
         .debug_prints
         .iter()
-        .any(|line| line.starts_with("[debug] ") && line.contains("68656c6c6f"));
+        .any(|line| line == expected);
     assert!(
         hit,
-        "expected a [debug] line containing hex(hello); got {:?}",
+        "expected a `{expected}` line; got {:?}",
         out.artifacts.debug_prints
     );
     Ok(())

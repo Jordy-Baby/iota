@@ -65,16 +65,15 @@ fn main() -> Result<()> {
     }
     pkg.install_into(&mut store);
 
-    // Build `0x42::hello::sum_to(10)` — a simple, non-generic function chosen
-    // so the Move VM tracer handles it cleanly.
+    // Build `0x42::hello::greet()` — calls `std::debug::print` so the
+    // `[debug]` line shows up on stdout when `capture_debug_prints` is on.
     let mut builder = ProgrammableTransactionBuilder::new();
-    let n_arg = builder.pure(10u64)?;
     builder.programmable_move_call(
         synthetic_id,
         Identifier::from_static("hello"),
-        Identifier::from_static("sum_to"),
+        Identifier::from_static("greet"),
         vec![],
-        vec![n_arg],
+        vec![],
     );
     let tx = TransactionData::new_programmable(
         IotaAddress::ZERO,
@@ -84,9 +83,8 @@ fn main() -> Result<()> {
         1000,
     );
 
-    // Run with all three debug toggles on. Debug prints go to stdout in
-    // Phase 1 (hence the `[debug]` line you'll see if the fixture is changed
-    // to invoke `hello::greet()` instead of `hello::sum_to(10)`).
+    // Run with all three debug toggles on. Debug prints go to stdout, so you
+    // should see a `[debug]` line for the byte string `greet()` prints.
     let executor = OfflineExecutor::with_debug(
         ProtocolVersion::MAX,
         1000,
@@ -101,7 +99,7 @@ fn main() -> Result<()> {
         },
     )?;
 
-    println!("\nRunning transaction against 0x42::hello::sum_to(10)...");
+    println!("\nRunning transaction against 0x42::hello::greet()...");
     let out = executor.simulate_transaction_with_debug(tx, VmChecks::Disabled)?;
 
     println!("  Effects status: {:?}", out.result.effects.status());

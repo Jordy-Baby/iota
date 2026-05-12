@@ -16,11 +16,24 @@
 ///   that made the blake2b fixture unusable in Checkpoint A.
 module hello::hello {
     use std::debug;
+    use std::string;
 
     /// Print a compile-time-known string via `debug::print`. The exact text
-    /// is asserted by `tests/debug_config.rs`.
+    /// is asserted by `tests/debug_config.rs`. The print is delegated to a
+    /// nested helper so `debug::print_stack_trace()` has at least one caller
+    /// frame to render — see the note on `print_with_trace`.
     public fun greet() {
-        let msg = b"hello from iota-local-executor";
+        print_with_trace(string::utf8(b"hello from iota-local-executor"));
+    }
+
+    /// Emits a stack-trace dump followed by the value. Note: the Move VM's
+    /// `print_stack_trace` native walks the *call stack* and does not include
+    /// the currently-active frame, so `print_with_trace` itself will NOT
+    /// appear in the trace output — only its callers (here: `greet`) will.
+    /// To see this function in the trace, the print would have to be moved
+    /// one frame deeper.
+    fun print_with_trace(msg: string::String) {
+        debug::print_stack_trace();
         debug::print(&msg);
     }
 
