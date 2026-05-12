@@ -22,7 +22,6 @@
 use std::path::PathBuf;
 
 use anyhow::Result;
-use iota_framework::BuiltInFramework;
 use iota_local_executor::{
     DebugConfig, InMemoryStore, LocalPackage, OfflineExecutor, ProfileOutput, ProfileSink, VmChecks,
 };
@@ -59,10 +58,7 @@ fn main() -> Result<()> {
     );
 
     // Seed the store with the framework, then install our synthetic package.
-    let mut store = InMemoryStore::new();
-    for obj in BuiltInFramework::genesis_objects() {
-        store.insert(obj);
-    }
+    let mut store = InMemoryStore::with_framework();
     pkg.install_into(&mut store);
 
     // Build `0x42::hello::greet()` — calls `std::debug::print` so the

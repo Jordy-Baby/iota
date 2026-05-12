@@ -25,7 +25,8 @@ use iota_types::{
     base_types::{ObjectID, SequenceNumber},
     digests::TransactionDigest,
     dynamic_field::{self, Field},
-    effects::TransactionEffectsAPI,
+    effects::{TransactionEffectsAPI, TransactionEvents},
+    execution::TypeLayoutStore,
     gas::IotaGasStatus,
     gas_coin::NANOS_PER_IOTA,
     metrics::{BytecodeVerifierMetrics, LimitsMetrics},
@@ -44,6 +45,11 @@ use iota_types::{
 use move_trace_format::format::MoveTraceBuilder;
 
 use crate::debug::{DebugArtifacts, DebugConfig, DebugSimulateResult, ProfileOutput, ProfileSink};
+
+/// Value the executor stuffs into a mock gas coin when a transaction has no
+/// explicit gas payment. One IOTA's worth of NANOs — wide enough to cover any
+/// realistic single-tx gas budget.
+const MOCK_GAS_COIN_NANOS: u64 = 1_000_000_000 * NANOS_PER_IOTA;
 
 /// Configuration for a local execution environment.
 pub(crate) struct ExecutionEnv {
@@ -388,10 +394,9 @@ fn prepare_transaction(
     let receiving_objects = build_receiving_objects(store, &receiving_object_refs)?;
 
     // Create a mock gas object if the transaction has no gas payment.
-    const SIMULATION_GAS_COIN_VALUE: u64 = 1_000_000_000 * NANOS_PER_IOTA;
     let mock_gas_id = if transaction.gas().is_empty() {
         let mock_gas_object = Object::new_move(
-            MoveObject::new_gas_coin(1.into(), ObjectID::MAX, SIMULATION_GAS_COIN_VALUE),
+            MoveObject::new_gas_coin(1.into(), ObjectID::MAX, MOCK_GAS_COIN_NANOS),
             Owner::Address(transaction.gas_data().owner),
             TransactionDigest::ZERO,
         );
@@ -679,6 +684,22 @@ fn build_receiving_objects(
 // ---------------------------------------------------------------------------
 // Shared helpers for executor prefetch logic
 // ---------------------------------------------------------------------------
+
+/// Decode a `TransactionEvents` payload into fully-annotated
+/// [`crate::DecodedEvent`]s, using `env`'s Move VM type-layout resolver and
+/// the supplied type-layout store. Used by every executor's `decode_events`
+/// to avoid duplicating the resolver-construction dance.
+pub(crate) fn decode_events_with<'store, S>(
+    env: &ExecutionEnv,
+    store: &'store S,
+    events: &TransactionEvents,
+) -> Vec<Result<crate::DecodedEvent>>
+where
+    S: TypeLayoutStore + 'store,
+{
+    let mut resolver = env.type_layout_resolver(Box::new(store));
+    crate::decode_events(events, resolver.as_mut())
+}
 
 /// Collect all unique object IDs referenced by a transaction (input objects,
 /// gas coins, and receiving objects).

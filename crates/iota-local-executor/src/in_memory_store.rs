@@ -5,6 +5,7 @@
 
 use std::collections::BTreeMap;
 
+use iota_framework::BuiltInFramework;
 use iota_types::{
     base_types::{ObjectID, SequenceNumber, VersionNumber},
     committee::EpochId,
@@ -29,6 +30,22 @@ impl InMemoryStore {
         Self {
             objects: BTreeMap::new(),
         }
+    }
+
+    /// Build a store pre-seeded with every built-in framework package object
+    /// ([`BuiltInFramework::genesis_objects`]). This is the standard starting
+    /// point for offline execution — any non-trivial Move call needs the
+    /// framework on hand.
+    ///
+    /// Equivalent to `let mut s = InMemoryStore::new(); for o in
+    /// BuiltInFramework::genesis_objects() { s.insert(o); }` — folded into one
+    /// call because almost every offline test/example begins with it.
+    pub fn with_framework() -> Self {
+        let mut store = Self::new();
+        for obj in BuiltInFramework::genesis_objects() {
+            store.insert(obj);
+        }
+        store
     }
 
     /// Insert an object into the store.

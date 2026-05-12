@@ -3,7 +3,7 @@
 
 //! [`OfflineExecutor`] — fully offline, all objects provided upfront.
 
-use anyhow::{Result, Result as AnyResult};
+use anyhow::Result;
 use iota_protocol_config::ProtocolVersion;
 use iota_types::{
     effects::TransactionEvents,
@@ -13,7 +13,7 @@ use iota_types::{
 
 use crate::{
     DebugConfig, DebugSimulateResult, InMemoryStore,
-    events::{DecodedEvent, decode_events},
+    events::DecodedEvent,
     execution::{self, ExecutionEnv},
 };
 
@@ -26,7 +26,9 @@ use crate::{
 /// use iota_local_executor::{InMemoryStore, OfflineExecutor};
 /// use iota_protocol_config::ProtocolVersion;
 ///
-/// let store = InMemoryStore::new();
+/// // `with_framework()` pre-loads the built-in framework packages so Move
+/// // calls can resolve. Add any caller-supplied objects with `insert()`.
+/// let mut store = InMemoryStore::with_framework();
 /// // store.insert(obj1);
 /// // store.insert(obj2);
 ///
@@ -93,9 +95,8 @@ impl OfflineExecutor {
     /// [`DecodedEvent`]s using this executor's Move VM type-layout resolver
     /// and package store. One `Result` per event so a single bad event
     /// doesn't mask the rest.
-    pub fn decode_events(&self, events: &TransactionEvents) -> Vec<AnyResult<DecodedEvent>> {
-        let mut resolver = self.env.type_layout_resolver(Box::new(&self.store));
-        decode_events(events, resolver.as_mut())
+    pub fn decode_events(&self, events: &TransactionEvents) -> Vec<Result<DecodedEvent>> {
+        execution::decode_events_with(&self.env, &self.store, events)
     }
 
     /// Simulate a transaction offline.

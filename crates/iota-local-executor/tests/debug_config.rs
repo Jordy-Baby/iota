@@ -14,7 +14,6 @@
 //!   (semantics-preserving instrumentation).
 
 use anyhow::Result;
-use iota_framework::BuiltInFramework;
 use iota_local_executor::{
     DebugConfig, InMemoryStore, OfflineExecutor, ProfileOutput, ProfileSink, VmChecks,
 };
@@ -27,11 +26,7 @@ use iota_types::{effects::TransactionEffectsAPI, transaction::TransactionData};
 const BLAKE2B_TX_BYTES_B64: &str = "AAABAAQDAAECAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgRoYXNoCmJsYWtlMmIyNTYAAQEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA6AMAAAAAAAAAypo7AAAAAAA=";
 
 fn seeded_store() -> InMemoryStore {
-    let mut store = InMemoryStore::new();
-    for obj in BuiltInFramework::genesis_objects() {
-        store.insert(obj);
-    }
-    store
+    InMemoryStore::with_framework()
 }
 
 fn blake2b_tx() -> TransactionData {

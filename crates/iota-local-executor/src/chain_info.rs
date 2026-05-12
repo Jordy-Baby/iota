@@ -125,7 +125,7 @@ impl ChainInfo {
         let epoch_timestamp_ms = epoch
             .get("startTimestamp")
             .and_then(|v| v.as_str())
-            .and_then(crate::graphql_executor::chrono_to_millis)
+            .and_then(crate::graphql_executor::parse_start_timestamp_millis)
             .ok_or_else(|| anyhow::anyhow!("missing startTimestamp"))?;
         let protocol_version = epoch
             .pointer("/protocolConfigs/protocolVersion")

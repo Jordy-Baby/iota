@@ -15,7 +15,6 @@
 //!   cargo run --example offline_dev_inspect
 
 use anyhow::Result;
-use iota_framework::BuiltInFramework;
 use iota_local_executor::{InMemoryStore, OfflineExecutor, VmChecks};
 use iota_protocol_config::ProtocolVersion;
 use iota_types::{
@@ -24,12 +23,11 @@ use iota_types::{
 };
 
 fn main() -> Result<()> {
-    // Build the in-memory store with all framework packages.
-    // These are compiled into the binary — no network access needed.
-    let mut store = InMemoryStore::new();
-    for obj in BuiltInFramework::genesis_objects() {
-        println!("  Loading framework package: {}", obj.id());
-        store.insert(obj);
+    // The framework packages (0x1 move-stdlib, 0x2 iota-framework, …) are
+    // compiled into the binary — no network access needed.
+    let store = InMemoryStore::with_framework();
+    for (id, _) in store.iter() {
+        println!("  Loaded framework package: {id}");
     }
 
     // Create the offline executor with reasonable defaults.

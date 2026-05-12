@@ -18,12 +18,13 @@ The Move VM isn't stateful between `simulate_*` calls: each run reads from whate
 use iota_local_executor::{
     ChainedOfflineExecutor, InMemoryStore, LocalPackage, OfflineExecutor, VmChecks,
 };
+use iota_sdk_types::SharedObjectReference;
 use iota_types::{
     base_types::IotaAddress,
     effects::TransactionEffectsAPI,
     object::Owner,
     programmable_transaction_builder::ProgrammableTransactionBuilder,
-    transaction::{ObjectArg, TEST_ONLY_GAS_UNIT_FOR_HEAVY_COMPUTATION_STORAGE, TransactionData},
+    transaction::{CallArg, TEST_ONLY_GAS_UNIT_FOR_HEAVY_COMPUTATION_STORAGE, TransactionData},
 };
 use move_core_types::ident_str;
 
@@ -47,18 +48,18 @@ let r1 = chain.simulate(tx1, VmChecks::Enabled)?;
 // Find the newly-created shared counter
 let (counter_ref, initial_shared_version) = r1.effects.created().into_iter()
     .find_map(|(oref, owner)| match owner {
-        Owner::Shared { initial_shared_version } => Some((oref, initial_shared_version)),
+        Owner::Shared(v) => Some((oref, v)),
         _ => None,
     })
     .unwrap();
 
 // tx2: increment it — this works because tx1's effects are now in the store
 let mut b = ProgrammableTransactionBuilder::new();
-let arg = b.obj(ObjectArg::SharedObject {
-    id: counter_ref.0,
+let arg = b.obj(CallArg::Shared(SharedObjectReference {
+    object_id: counter_ref.object_id,
     initial_shared_version,
     mutable: true,
-}).unwrap();
+})).unwrap();
 b.programmable_move_call(
     synthetic_id,
     ident_str!("counter").into(),
@@ -70,7 +71,7 @@ let tx2 = TransactionData::new_programmable(
     TEST_ONLY_GAS_UNIT_FOR_HEAVY_COMPUTATION_STORAGE, 1000,
 );
 let r2 = chain.simulate(tx2, VmChecks::Enabled)?;
-assert!(r2.effects.status().is_ok());
+assert!(r2.effects.status().is_success());
 ```
 
 ## History

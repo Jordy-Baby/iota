@@ -36,18 +36,23 @@ use crate::{InMemoryStore, caching_store::CachingStore};
 /// [`LocalPackage::install_into`] (for [`InMemoryStore`]) or
 /// [`LocalPackage::install_into_caching`] (for any [`CachingStore`]).
 pub struct LocalPackage {
-    /// The synthetic package ID the caller chose (e.g. `0x42`). Both the
-    /// compiled bytecode and the resulting `MovePackage` report this ID.
-    pub id: ObjectID,
-    /// The on-chain package object ready to be inserted into a store.
+    /// The on-chain package object ready to be inserted into a store. Its
+    /// [`Object::id`] is the synthetic ID the caller passed to
+    /// [`LocalPackage::compile`].
     pub object: Object,
-    /// The full [`CompiledPackage`] kept for Phase 3 source-map use. The
-    /// bytecode already lives inside `object`; this field is not required for
-    /// execution.
+    /// The full [`CompiledPackage`], retained so callers can resolve
+    /// source-map positions (e.g. for IDE overlays). The bytecode already
+    /// lives inside `object`; this field is not required for execution.
     pub compiled: CompiledPackage,
 }
 
 impl LocalPackage {
+    /// The synthetic package ID the caller passed to [`Self::compile`]. Same
+    /// as `self.object.id()`.
+    pub fn id(&self) -> ObjectID {
+        self.object.id()
+    }
+
     /// Compile a Move source package at `path` and bind its declared
     /// `named_address` to `synthetic_id`, producing an [`Object`] that can be
     /// installed in any [`InMemoryStore`] or [`CachingStore`].
@@ -102,11 +107,7 @@ impl LocalPackage {
         )
         .map_err(|e| anyhow!("assembling MovePackage for {synthetic_id}: {e}"))?;
 
-        Ok(Self {
-            id: synthetic_id,
-            object,
-            compiled,
-        })
+        Ok(Self { object, compiled })
     }
 
     /// Install this package into an [`InMemoryStore`] for use by

@@ -43,13 +43,8 @@ fn synthetic_id() -> ObjectID {
 /// redirection needed.
 #[test]
 fn greet_debug_prints_captured_into_artifacts() -> Result<()> {
-    use iota_framework::BuiltInFramework;
-
     let pkg = LocalPackage::compile(&fixture_path(), synthetic_id(), "hello", &protocol_config())?;
-    let mut store = InMemoryStore::new();
-    for obj in BuiltInFramework::genesis_objects() {
-        store.insert(obj);
-    }
+    let mut store = InMemoryStore::with_framework();
     pkg.install_into(&mut store);
 
     let executor = OfflineExecutor::with_debug(
@@ -113,7 +108,7 @@ fn greet_debug_prints_captured_into_artifacts() -> Result<()> {
 fn compile_binds_synthetic_id_into_every_module() -> Result<()> {
     let pkg = LocalPackage::compile(&fixture_path(), synthetic_id(), "hello", &protocol_config())?;
 
-    assert_eq!(pkg.id, synthetic_id());
+    assert_eq!(pkg.id(), synthetic_id());
     assert_eq!(pkg.object.id(), synthetic_id());
 
     let expected = AccountAddress::new(synthetic_id().into_bytes());
@@ -156,14 +151,9 @@ fn compile_errors_when_named_address_is_wrong() {
 /// actually callable from a PTB and the transaction succeeds.
 #[test]
 fn ptb_call_against_synthetic_package_succeeds() -> Result<()> {
-    use iota_framework::BuiltInFramework;
-
     let pkg = LocalPackage::compile(&fixture_path(), synthetic_id(), "hello", &protocol_config())?;
 
-    let mut store = InMemoryStore::new();
-    for obj in BuiltInFramework::genesis_objects() {
-        store.insert(obj);
-    }
+    let mut store = InMemoryStore::with_framework();
     pkg.install_into(&mut store);
 
     let executor = OfflineExecutor::new(ProtocolVersion::MAX, 1000, 0, 0, store)?;
@@ -207,13 +197,8 @@ fn ptb_call_against_synthetic_package_succeeds() -> Result<()> {
 /// we can assert content now.
 #[test]
 fn trace_captures_events_for_fixture_call() -> Result<()> {
-    use iota_framework::BuiltInFramework;
-
     let pkg = LocalPackage::compile(&fixture_path(), synthetic_id(), "hello", &protocol_config())?;
-    let mut store = InMemoryStore::new();
-    for obj in BuiltInFramework::genesis_objects() {
-        store.insert(obj);
-    }
+    let mut store = InMemoryStore::with_framework();
     pkg.install_into(&mut store);
 
     let executor = OfflineExecutor::with_debug(
@@ -267,8 +252,6 @@ fn trace_captures_events_for_fixture_call() -> Result<()> {
 /// against the debug instrumentation quietly perturbing execution.
 #[test]
 fn full_debug_config_preserves_effects_on_fixture() -> Result<()> {
-    use iota_framework::BuiltInFramework;
-
     let pkg = LocalPackage::compile(&fixture_path(), synthetic_id(), "hello", &protocol_config())?;
 
     let mk_tx = || {
@@ -291,10 +274,7 @@ fn full_debug_config_preserves_effects_on_fixture() -> Result<()> {
     };
 
     let mk_store = || {
-        let mut store = InMemoryStore::new();
-        for obj in BuiltInFramework::genesis_objects() {
-            store.insert(obj);
-        }
+        let mut store = InMemoryStore::with_framework();
         pkg.install_into(&mut store);
         store
     };
@@ -330,13 +310,8 @@ fn full_debug_config_preserves_effects_on_fixture() -> Result<()> {
 /// package's bytecode rather than just framework code.
 #[test]
 fn profile_captures_fixture_module_frame() -> Result<()> {
-    use iota_framework::BuiltInFramework;
-
     let pkg = LocalPackage::compile(&fixture_path(), synthetic_id(), "hello", &protocol_config())?;
-    let mut store = InMemoryStore::new();
-    for obj in BuiltInFramework::genesis_objects() {
-        store.insert(obj);
-    }
+    let mut store = InMemoryStore::with_framework();
     pkg.install_into(&mut store);
 
     let executor = OfflineExecutor::with_debug(

@@ -8,12 +8,12 @@ Given transaction bytes in the same format the node's JSON-RPC API accepts, this
 
 Pick the backend that matches how you get at objects:
 
-| Executor          | Backend                    | Example                                                              |
-| ----------------- | -------------------------- | -------------------------------------------------------------------- |
-| `OfflineExecutor` | In-memory only, no network | [examples/offline_dev_inspect.rs](examples/offline_dev_inspect.rs)   |
-| `JsonRpcExecutor` | JSON-RPC                   | [examples/local_dev_inspect.rs](examples/local_dev_inspect.rs)       |
-| `GrpcExecutor`    | gRPC                       | [tests/e2e_executor_comparison.rs](tests/e2e_executor_comparison.rs) |
-| `GraphqlExecutor` | GraphQL                    | [tests/e2e_executor_comparison.rs](tests/e2e_executor_comparison.rs) |
+| Executor          | Backend                    | Example                                                                            |
+| ----------------- | -------------------------- | ---------------------------------------------------------------------------------- |
+| `OfflineExecutor` | In-memory only, no network | [examples/offline_dev_inspect.rs](examples/offline_dev_inspect.rs)                 |
+| `JsonRpcExecutor` | JSON-RPC                   | [examples/local_dev_inspect.rs](examples/local_dev_inspect.rs)                     |
+| `GrpcExecutor`    | gRPC                       | [tests/e2e_executor_comparison.rs](tests/e2e_executor_comparison.rs)               |
+| `GraphqlExecutor` | GraphQL                    | API mirrors `GrpcExecutor`; see [src/graphql_executor.rs](src/graphql_executor.rs) |
 
 The three networked executors pre-fetch input objects in batch, cache them across calls, and lazily load anything the VM pulls in during execution.
 
@@ -41,7 +41,7 @@ Supporting docs referenced from the main features above — look here once you h
 - **Chained (multi-transaction) execution** — each tx sees the state changes of the previous; useful for testing flows or reproducing history. → [docs/details/multi-tx.md](docs/details/multi-tx.md)
 - **Remote-fetch caching and `ChainInfo` reuse** — persistent object cache per executor, plus one-fetch-many-executors chain state. → [docs/details/remote-caching.md](docs/details/remote-caching.md)
 - **Authenticator gas-optimisation** — profile a `MoveAuthenticator`'s function locally and iterate on its Move code. → [docs/details/authenticator-gas-optimization.md](docs/details/authenticator-gas-optimization.md)
-- **Structured errors** — `LocalExecError::{Fetch, Validation, Execution}` so retry logic can branch on error kind. → [docs/details/errors.md](docs/details/errors.md)
+- **Structured errors** — `LocalExecError::Validation` so callers can distinguish pre-execution validation failures from generic errors. → [docs/details/errors.md](docs/details/errors.md)
 
 ## Internal and integration docs
 

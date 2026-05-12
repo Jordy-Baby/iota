@@ -6,7 +6,6 @@
 use std::path::PathBuf;
 
 use anyhow::Result;
-use iota_framework::BuiltInFramework;
 use iota_local_executor::{
     DebugConfig, InMemoryStore, LocalPackage, OfflineExecutor, VmChecks, summarize_by_function,
     summarize_with_source,
@@ -39,10 +38,7 @@ fn protocol_config() -> ProtocolConfig {
 #[test]
 fn summarize_by_function_sees_fixture_calls() -> Result<()> {
     let pkg = LocalPackage::compile(&fixture_path(), synthetic_id(), "hello", &protocol_config())?;
-    let mut store = InMemoryStore::new();
-    for obj in BuiltInFramework::genesis_objects() {
-        store.insert(obj);
-    }
+    let mut store = InMemoryStore::with_framework();
     pkg.install_into(&mut store);
 
     let executor = OfflineExecutor::with_debug(

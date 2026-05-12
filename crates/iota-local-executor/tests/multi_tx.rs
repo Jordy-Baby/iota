@@ -6,7 +6,6 @@
 use std::path::PathBuf;
 
 use anyhow::Result;
-use iota_framework::BuiltInFramework;
 use iota_local_executor::{
     ChainedOfflineExecutor, InMemoryStore, LocalPackage, OfflineExecutor, VmChecks,
     apply_effects_to_in_memory,
@@ -43,10 +42,7 @@ fn protocol_config() -> ProtocolConfig {
 #[test]
 fn chain_create_then_increment_counter() -> Result<()> {
     let pkg = LocalPackage::compile(&fixture_path(), synthetic_id(), "hello", &protocol_config())?;
-    let mut store = InMemoryStore::new();
-    for obj in BuiltInFramework::genesis_objects() {
-        store.insert(obj);
-    }
+    let mut store = InMemoryStore::with_framework();
     pkg.install_into(&mut store);
 
     let offline = OfflineExecutor::new(ProtocolVersion::MAX, 1000, 0, 0, store)?;
@@ -183,10 +179,7 @@ fn apply_effects_removes_deleted_ids() {
 #[test]
 fn manual_apply_effects_across_calls() -> Result<()> {
     let pkg = LocalPackage::compile(&fixture_path(), synthetic_id(), "hello", &protocol_config())?;
-    let mut store = InMemoryStore::new();
-    for obj in BuiltInFramework::genesis_objects() {
-        store.insert(obj);
-    }
+    let mut store = InMemoryStore::with_framework();
     pkg.install_into(&mut store);
 
     let mut offline = OfflineExecutor::new(ProtocolVersion::MAX, 1000, 0, 0, store)?;

@@ -12,10 +12,11 @@ Standard schemes (Ed25519, Secp256k1/r1, MultiSig) are verified cryptographicall
 
 ```rust
 use iota_local_executor::{JsonRpcExecutor, SenderSignedData, VmChecks};
+use iota_sdk_types::SharedObjectReference;
 use iota_types::{
     move_authenticator::MoveAuthenticator,
     signature::GenericSignature,
-    transaction::{CallArg, ObjectArg, TransactionData},
+    transaction::{CallArg, TransactionData},
 };
 
 // 1. Build the transaction data as usual.
@@ -24,8 +25,8 @@ let tx_data: TransactionData = /* … */;
 // 2. Build a `MoveAuthenticator`. For `authenticate_free_access` (no extra
 //    args), `signature_args` and `receiving_objects` are both empty; the
 //    `self_call_arg` references the abstract-account shared object.
-let self_call_arg = CallArg::Object(ObjectArg::SharedObject {
-    id: aa_ref.0,
+let self_call_arg = CallArg::Shared(SharedObjectReference {
+    object_id: aa_ref.0,
     initial_shared_version: aa_ref.1,
     mutable: false,
 });
@@ -43,7 +44,7 @@ let result = executor
     .simulate_signed_transaction(signed, VmChecks::Disabled)
     .await?;
 
-if result.effects.status().is_ok() {
+if result.effects.status().is_success() {
     // Authenticator accepted — your signature would have been valid on-chain.
 } else {
     // Authenticator rejected or transaction body aborted.

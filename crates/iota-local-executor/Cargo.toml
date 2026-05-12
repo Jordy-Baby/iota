@@ -65,6 +65,10 @@ name = "offline_stake_inspect"
 path = "examples/offline_stake_inspect.rs"
 
 [[example]]
+name = "offline_stake_inspect_with_logs"
+path = "examples/offline_stake_inspect_with_logs.rs"
+
+[[example]]
 name = "hardcoded_offline_inspect"
 path = "examples/hardcoded_offline_inspect.rs"
 

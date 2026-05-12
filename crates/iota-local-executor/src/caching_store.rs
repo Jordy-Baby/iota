@@ -11,7 +11,10 @@
 //! - [`GrpcFetcher`] — fetches via gRPC (`iota_grpc_client::Client`)
 //! - [`GraphqlFetcher`] — fetches via GraphQL (`SimpleClient`)
 
-use std::{collections::BTreeMap, sync::RwLock};
+use std::{
+    collections::BTreeMap,
+    sync::{RwLock, RwLockReadGuard, RwLockWriteGuard},
+};
 
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use iota_graphql_rpc_client::simple_client::SimpleClient;
@@ -29,6 +32,44 @@ use iota_types::{
         error::Error as StorageError,
     },
 };
+
+// ---------------------------------------------------------------------------
+// Internal lock helpers
+// ---------------------------------------------------------------------------
+
+/// Acquire a read guard, panicking with a consistent message if the lock is
+/// poisoned. Locks are only ever held for tiny, panic-free critical sections,
+/// so a poisoned lock here would indicate something has gone very wrong
+/// elsewhere — surfacing as a panic is appropriate.
+fn read_guard<T>(lock: &RwLock<T>) -> RwLockReadGuard<'_, T> {
+    lock.read().expect("CachingStore lock poisoned")
+}
+
+/// Mirror of [`read_guard`] for write access.
+fn write_guard<T>(lock: &RwLock<T>) -> RwLockWriteGuard<'_, T> {
+    lock.write().expect("CachingStore lock poisoned")
+}
+
+// ---------------------------------------------------------------------------
+// ObjectFetchMode
+// ---------------------------------------------------------------------------
+
+/// Controls how objects are fetched from the remote node.
+#[derive(Debug, Clone, Copy, Default)]
+pub enum ObjectFetchMode {
+    /// Fetch owned/immutable objects at the exact version specified in the
+    /// transaction. Shared objects and packages are always fetched at the
+    /// latest version. This is the default and matches what a real node would
+    /// see when processing the transaction.
+    #[default]
+    UseTransactionVersions,
+
+    /// Fetch all objects at their latest version, ignoring the versions in
+    /// the transaction. Useful for dev-inspect style usage where the
+    /// transaction may have been constructed with stale or placeholder object
+    /// references.
+    UseLatestVersions,
+}
 
 // ---------------------------------------------------------------------------
 // ObjectFetcher trait
@@ -69,10 +110,7 @@ impl<F> CachingStore<F> {
 
     /// Insert a pre-fetched object into the local cache.
     pub fn insert(&self, object: Object) {
-        self.objects
-            .write()
-            .expect("lock poisoned")
-            .insert(object.id(), object);
+        write_guard(&self.objects).insert(object.id(), object);
     }
 
     /// Remove an object from the cache (and any package-override for the
@@ -81,11 +119,15 @@ impl<F> CachingStore<F> {
     /// Used when chaining transactions to drop objects that the previous
     /// transaction deleted or wrapped.
     pub fn remove(&self, id: &ObjectID) -> Option<Object> {
-        self.package_overrides
-            .write()
-            .expect("lock poisoned")
-            .remove(id);
-        self.objects.write().expect("lock poisoned").remove(id)
+        write_guard(&self.package_overrides).remove(id);
+        write_guard(&self.objects).remove(id)
+    }
+
+    /// Drop every cached object and every package override. After this call
+    /// the next simulation will fetch from the remote again.
+    pub fn clear(&self) {
+        write_guard(&self.objects).clear();
+        write_guard(&self.package_overrides).clear();
     }
 
     /// Install a local package under a synthetic [`ObjectID`]. Future
@@ -95,25 +137,18 @@ impl<F> CachingStore<F> {
     /// The supplied `package_object` must wrap a `MovePackage` (not a Move
     /// object) — this is what `LocalPackage::install_into_caching` produces.
     pub fn insert_package_override(&self, package_object: Object) {
-        self.package_overrides
-            .write()
-            .expect("lock poisoned")
-            .insert(package_object.id(), package_object);
+        write_guard(&self.package_overrides).insert(package_object.id(), package_object);
     }
 
     /// Get a cached object by ID (cache-only, no fetch).
     pub fn get_cached(&self, id: &ObjectID) -> Option<Object> {
-        self.objects.read().expect("lock poisoned").get(id).cloned()
+        read_guard(&self.objects).get(id).cloned()
     }
 
     /// Look up a package override without touching the object cache or remote
     /// fetcher.
     fn get_package_override(&self, id: &ObjectID) -> Option<Object> {
-        self.package_overrides
-            .read()
-            .expect("lock poisoned")
-            .get(id)
-            .cloned()
+        read_guard(&self.package_overrides).get(id).cloned()
     }
 }
 
@@ -144,10 +179,7 @@ impl<F: ObjectFetcher> ObjectStore for CachingStore<F> {
         version: VersionNumber,
     ) -> Result<Option<Object>, StorageError> {
         // Check cache with version match first.
-        if let Some(obj) = self
-            .objects
-            .read()
-            .expect("lock poisoned")
+        if let Some(obj) = read_guard(&self.objects)
             .get(object_id)
             .filter(|o| o.version() == version)
             .cloned()

@@ -24,8 +24,7 @@
 
 use anyhow::Result;
 use iota_json_rpc_types::IotaObjectDataOptions;
-use iota_local_executor::{InMemoryStore, OfflineExecutor, VmChecks};
-use iota_protocol_config::{Chain, ProtocolConfig, ProtocolVersion};
+use iota_local_executor::{ChainInfo, InMemoryStore, OfflineExecutor, VmChecks};
 use iota_sdk::IotaClientBuilder;
 use iota_types::{
     base_types::ObjectID,
@@ -42,25 +41,13 @@ async fn main() -> Result<()> {
     println!("Phase 1: Fetching objects from devnet...");
     let client = IotaClientBuilder::default().build_devnet().await?;
 
-    // Fetch protocol config and epoch info
-    let protocol_config_response = client.read_api().get_protocol_config(None).await?;
-    let protocol_version: ProtocolVersion = protocol_config_response.protocol_version;
-    let reference_gas_price = client.read_api().get_reference_gas_price().await?;
-
-    let latest_checkpoint = client
-        .read_api()
-        .get_latest_checkpoint_sequence_number()
-        .await?;
-    let checkpoint = client
-        .read_api()
-        .get_checkpoint(latest_checkpoint.into())
-        .await?;
-    let epoch_id = checkpoint.epoch;
-    let epoch_timestamp_ms = checkpoint.timestamp_ms;
-
-    println!("  Protocol version: {protocol_version:?}");
-    println!("  Reference gas price: {reference_gas_price}");
-    println!("  Epoch: {epoch_id}");
+    // Bundle protocol version + RGP + epoch id + epoch timestamp into a
+    // single helper call (one round-trip per field on devnet, but the helper
+    // is the canonical way and parallels `JsonRpcExecutor::with_chain_info`).
+    let info = ChainInfo::fetch_from_json_rpc(&client).await?;
+    println!("  Protocol version: {:?}", info.protocol_version);
+    println!("  Reference gas price: {}", info.reference_gas_price);
+    println!("  Epoch: {}", info.epoch_id);
 
     // Same staking transaction bytes as local_stake_inspect
     let tx_bytes_base64 = "AAADAAgAypo7AAAAAAEBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUBAAAAAAAAAAEAINqRtZV/6ONntsXV/L9IRp9ACpOV+VnDUxBwOyp4hRr+AgIAAQEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwtpb3RhX3N5c3RlbRFyZXF1ZXN0X2FkZF9zdGFrZQADAQEAAgAAAQIAIiK0ZqJDmevPXsDwSCCBKuIP6hA3xzbP7GCHU6o4tSIDGcvPD+/Tvw/dvzpb0UY9UJCRBlY/BhIGEGEBTRGPdHNaPxUAAAAAACA8sy5o+BES2kxKEnXM7cH94maytD+8aHx/lXKR0+CK2JbazvWIYMZYjungyM2qGZgUw31KLRDe8bX9f58VgNUkyBMAAAAAAAAgh/y1xeOPt7crDLnGZlW2jTzXSaAXYKtvOEISYwCZb63PFCwjsZFjUhgajd5ZSwA/VzogxQh/JEQL05VfqazefccTAAAAAAAAIJgclRy0Uq4ONHCvw1vi8JqDMorQT11j9eRPTBPeDMA/IiK0ZqJDmevPXsDwSCCBKuIP6hA3xzbP7GCHU6o4tSLoAwAAAAAAAGATQQAAAAAAAA==";
@@ -123,14 +110,11 @@ async fn main() -> Result<()> {
     // ---------------------------------------------------------------
     println!("\nPhase 2: Executing offline (no network access)...");
 
-    // Verify protocol config can be built locally
-    let _protocol_config = ProtocolConfig::get_for_version(protocol_version, Chain::Unknown);
-
     let executor = OfflineExecutor::new(
-        protocol_version,
-        reference_gas_price,
-        epoch_id,
-        epoch_timestamp_ms,
+        info.protocol_version,
+        info.reference_gas_price,
+        info.epoch_id,
+        info.epoch_timestamp_ms,
         store,
     )?;
 

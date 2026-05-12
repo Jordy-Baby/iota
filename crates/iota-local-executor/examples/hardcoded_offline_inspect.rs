@@ -16,7 +16,6 @@
 //!   cargo run --example hardcoded_offline_inspect
 
 use anyhow::Result;
-use iota_framework::BuiltInFramework;
 use iota_local_executor::{InMemoryStore, OfflineExecutor, VmChecks};
 use iota_protocol_config::ProtocolVersion;
 use iota_types::{
@@ -53,13 +52,8 @@ fn main() -> Result<()> {
     // ---------------------------------------------------------------
     // 1. Build the object store from hardcoded BCS + built-in framework
     // ---------------------------------------------------------------
-    let mut store = InMemoryStore::new();
-
-    // Load built-in framework packages (0x1, 0x2, 0x3, 0x107a)
-    for obj in BuiltInFramework::genesis_objects() {
-        store.insert(obj);
-    }
-    println!("  Loaded built-in framework packages");
+    let mut store = InMemoryStore::with_framework();
+    println!("  Loaded built-in framework packages (0x1, 0x2, 0x3, 0x107a, …)");
 
     // Deserialize hardcoded objects from BCS base64
     for (i, b64) in HARDCODED_OBJECTS.iter().enumerate() {

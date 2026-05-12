@@ -18,14 +18,14 @@ use move_trace_format::format::MoveTrace;
 ///
 /// Every field is independently toggleable. The default value disables all
 /// debug capture and matches the behavior of the non-debug simulate methods.
-#[derive(Default, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct DebugConfig {
     /// Enable Move `debug::print` output.
     ///
     /// Flips the `silent` flag that the local executor passes to
-    /// `iota_execution::executor()`. In Phase 1, prints go to stdout; in
-    /// Phase 2, with [`DebugConfig::structured_debug_capture`] set, they are
-    /// captured into [`DebugArtifacts::debug_prints`] instead.
+    /// `iota_execution::executor()`. By default prints go to stdout; pair with
+    /// [`DebugConfig::structured_debug_capture`] to instead route them into
+    /// [`DebugArtifacts::debug_prints`].
     pub capture_debug_prints: bool,
 
     /// Enable the Move VM gas profiler and choose where the Speedscope JSON
@@ -37,13 +37,14 @@ pub struct DebugConfig {
     /// [`MoveTrace`] is returned in [`DebugArtifacts::trace`].
     pub trace: bool,
 
-    /// Phase 2: route `debug::print` output into an in-memory buffer instead
-    /// of stdout. No effect in Phase 1.
+    /// Route `debug::print` output into an in-memory buffer instead of
+    /// stdout. Has no effect unless [`DebugConfig::capture_debug_prints`] is
+    /// also set.
     pub structured_debug_capture: bool,
 }
 
 /// Where to write the Speedscope-format gas profile.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum ProfileSink {
     /// Write the profile JSON to the given path on disk (forwarded directly
     /// to the Move VM profiler).
@@ -79,9 +80,9 @@ pub enum ProfileOutput {
 /// enabled.
 #[derive(Default)]
 pub struct DebugArtifacts {
-    /// Structured `debug::print` lines. Always empty in Phase 1 (prints go to
-    /// stdout). Populated in Phase 2 when
-    /// [`DebugConfig::structured_debug_capture`] is set.
+    /// Structured `debug::print` lines. Empty unless
+    /// [`DebugConfig::structured_debug_capture`] is set — without it, prints
+    /// go to stdout instead.
     pub debug_prints: Vec<String>,
 
     /// Gas profile output, if [`DebugConfig::profile`] was set.

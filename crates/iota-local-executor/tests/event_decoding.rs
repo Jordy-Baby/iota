@@ -9,7 +9,6 @@
 use std::path::PathBuf;
 
 use anyhow::Result;
-use iota_framework::BuiltInFramework;
 use iota_local_executor::{
     ChainedOfflineExecutor, GasEstimate, InMemoryStore, LocalPackage, OfflineExecutor, VmChecks,
 };
@@ -43,10 +42,7 @@ fn protocol_config() -> ProtocolConfig {
 #[test]
 fn decode_emitted_incremented_event() -> Result<()> {
     let pkg = LocalPackage::compile(&fixture_path(), synthetic_id(), "hello", &protocol_config())?;
-    let mut store = InMemoryStore::new();
-    for obj in BuiltInFramework::genesis_objects() {
-        store.insert(obj);
-    }
+    let mut store = InMemoryStore::with_framework();
     pkg.install_into(&mut store);
 
     let offline = OfflineExecutor::new(ProtocolVersion::MAX, 1000, 0, 0, store)?;
@@ -157,10 +153,7 @@ fn decode_emitted_incremented_event() -> Result<()> {
 #[test]
 fn gas_estimate_surfaces_effects_numbers() -> Result<()> {
     let pkg = LocalPackage::compile(&fixture_path(), synthetic_id(), "hello", &protocol_config())?;
-    let mut store = InMemoryStore::new();
-    for obj in BuiltInFramework::genesis_objects() {
-        store.insert(obj);
-    }
+    let mut store = InMemoryStore::with_framework();
     pkg.install_into(&mut store);
 
     let offline = OfflineExecutor::new(ProtocolVersion::MAX, 1000, 0, 0, store)?;

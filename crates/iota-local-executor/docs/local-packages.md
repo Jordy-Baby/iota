@@ -99,7 +99,7 @@ let tx = TransactionData::new_programmable(
     1000,
 );
 let result = executor.simulate_transaction(tx, VmChecks::Disabled)?;
-assert!(result.effects.status().is_ok());
+assert!(result.effects.status().is_success());
 ```
 
 ## Mixing with remote objects

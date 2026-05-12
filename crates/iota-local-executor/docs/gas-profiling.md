@@ -38,7 +38,7 @@ Use `simulate_transaction_with_debug` (or the `_signed_` variant) instead of `si
 
 ```rust
 let out = executor.simulate_transaction_with_debug(tx, VmChecks::Disabled)?;
-assert!(out.result.effects.status().is_ok());
+assert!(out.result.effects.status().is_success());
 
 let profile = out.artifacts.profile.expect("ProfileSink::Capture was set");
 let bytes = match profile {

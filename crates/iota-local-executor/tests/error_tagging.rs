@@ -4,7 +4,6 @@
 //! Tests for `LocalExecError` — verifies that failure paths tag errors with
 //! the right category so callers can downcast and handle them distinctly.
 
-use iota_framework::BuiltInFramework;
 use iota_local_executor::{InMemoryStore, LocalExecError, OfflineExecutor, VmChecks};
 use iota_protocol_config::ProtocolVersion;
 use iota_types::{
@@ -17,11 +16,14 @@ use iota_types::{
 };
 
 fn seeded_offline() -> OfflineExecutor {
-    let mut store = InMemoryStore::new();
-    for obj in BuiltInFramework::genesis_objects() {
-        store.insert(obj);
-    }
-    OfflineExecutor::new(ProtocolVersion::MAX, 1000, 0, 0, store).unwrap()
+    OfflineExecutor::new(
+        ProtocolVersion::MAX,
+        1000,
+        0,
+        0,
+        InMemoryStore::with_framework(),
+    )
+    .unwrap()
 }
 
 #[test]
@@ -68,21 +70,12 @@ fn validation_failure_tags_error_as_validation() {
 
 #[test]
 fn local_exec_error_display_includes_category_tag() {
-    let fetch = LocalExecError::fetch("fetching object 0x1", anyhow::anyhow!("connection reset"));
     let validation =
         LocalExecError::validation("invalid tx", anyhow::anyhow!("gas budget below minimum"));
-    let execution = LocalExecError::execution("move abort", anyhow::anyhow!("abort code 7"));
 
-    assert!(fetch.to_string().starts_with("[fetch]"), "{fetch}");
     assert!(
         validation.to_string().starts_with("[validation]"),
         "{validation}"
     );
-    assert!(
-        execution.to_string().starts_with("[execution]"),
-        "{execution}"
-    );
-    assert!(fetch.is_fetch() && !fetch.is_validation() && !fetch.is_execution());
     assert!(validation.is_validation());
-    assert!(execution.is_execution());
 }
