@@ -27,7 +27,7 @@ The main workflows a developer reaches for when building against the crate. Each
 - **Dev-inspect and dry-run** — run a transaction locally for fast, private iteration. → [docs/dev-inspect.md](docs/dev-inspect.md)
 - **Local Move packages with synthetic IDs** — compile a Move package in-process and wire it to a caller-chosen `ObjectID` (e.g. `0x42`) so transactions can call into it without publishing. → [docs/local-packages.md](docs/local-packages.md)
 - **`debug::print` capture** — emit or capture Move `debug::print` output, with structured in-memory capture for programmatic assertions. → [docs/debug-prints.md](docs/debug-prints.md)
-- **Gas profiling** — Speedscope-format per-instruction gas profile, viewable in https://www.speedscope.app/, with automatic merging across VM sessions (e.g. authenticator + body). → [docs/gas-profiling.md](docs/gas-profiling.md)
+- **Gas profiling** — Speedscope-format per-instruction gas profile, viewable locally via `npx speedscope <path>` or in https://www.speedscope.app/, with automatic merging across VM sessions (e.g. authenticator + body). → [docs/gas-profiling.md](docs/gas-profiling.md)
 - **Gas estimation** — `GasEstimate::from_effects(...)` + `suggested_budget_with_headroom(1.2)` for picking a submission budget. → [docs/gas-estimation.md](docs/gas-estimation.md)
 - **Instruction-level tracing** — full `MoveTrace` of frames, instructions, and value reads/writes for post-hoc analysis. → [docs/tracing.md](docs/tracing.md)
 - **Event decoding** — `executor.decode_events(...)` → fully-annotated `MoveValue`s per event, ready to pattern-match. → [docs/events.md](docs/events.md)

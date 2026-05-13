@@ -111,9 +111,10 @@ fn main() -> Result<()> {
     if let Some(profile) = out.artifacts.profile {
         match profile {
             ProfileOutput::Json(bytes) => {
-                // Persist the Speedscope JSON so the developer can open it in
-                // https://www.speedscope.app/ — not required for the example
-                // but handy.
+                // Persist the Speedscope JSON. Two ways to view it:
+                //   - Upload to https://www.speedscope.app/, or
+                //   - Run it locally with `npx speedscope <path>` (no upload, opens the bundled
+                //     speedscope UI on localhost).
                 let out_path = std::env::temp_dir().join("iota-local-executor-demo-profile.json");
                 std::fs::write(&out_path, &bytes)?;
                 println!(
@@ -121,6 +122,8 @@ fn main() -> Result<()> {
                     bytes.len(),
                     out_path.display()
                 );
+                println!("    View locally: npx speedscope {}", out_path.display());
+                println!("    Or upload to: https://www.speedscope.app/");
             }
             ProfileOutput::Path(p) => println!("  Profile: written to {}", p.display()),
         }

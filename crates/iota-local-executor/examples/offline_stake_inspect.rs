@@ -158,7 +158,8 @@ async fn main() -> Result<()> {
                 continue;
             }
             let bcs_bytes = bcs::to_bytes(obj)?;
-            let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bcs_bytes);
+            let b64 =
+                base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bcs_bytes);
             println!("  object {id} ({} bytes): {b64}", bcs_bytes.len());
         }
         println!("  === End BCS-encoded objects ===\n");
@@ -250,13 +251,15 @@ async fn fetch_dynamic_field_children(
         let mut child_ids: Vec<(ObjectId, Option<Version>)> = Vec::new();
         for field in &fields {
             if let Some(fid) = field.field_id.as_ref() {
-                let sdk: ObjectId =
-                    fid.try_into().map_err(|e| anyhow!("invalid field_id: {e}"))?;
+                let sdk: ObjectId = fid
+                    .try_into()
+                    .map_err(|e| anyhow!("invalid field_id: {e}"))?;
                 child_ids.push((sdk, None));
             }
             if let Some(cid) = field.child_id.as_ref() {
-                let sdk: ObjectId =
-                    cid.try_into().map_err(|e| anyhow!("invalid child_id: {e}"))?;
+                let sdk: ObjectId = cid
+                    .try_into()
+                    .map_err(|e| anyhow!("invalid child_id: {e}"))?;
                 child_ids.push((sdk, None));
             }
         }

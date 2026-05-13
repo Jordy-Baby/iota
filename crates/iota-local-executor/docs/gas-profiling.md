@@ -54,10 +54,16 @@ let bytes = match profile {
 ```rust
 let out_path = std::env::temp_dir().join("gas_profile.json");
 std::fs::write(&out_path, &bytes)?;
-println!("Open {} in https://www.speedscope.app/", out_path.display());
+println!("View locally: npx speedscope {}", out_path.display());
+println!("Or upload to: https://www.speedscope.app/");
 ```
 
-Drag the file onto https://www.speedscope.app/ (everything runs in-browser — the file doesn't leave your machine). You get three views: time-order, left-heavy, and sandwich. Each frame's "weight" is gas consumed.
+Two ways to view the same file:
+
+- **Locally**: `npx speedscope <path>` (requires Node) runs the bundled Speedscope UI on `localhost` — no upload, nothing leaves your machine, works offline.
+- **In the browser**: drag the file onto https://www.speedscope.app/. It also runs in-browser (the file doesn't leave your machine), but needs network for the initial page load.
+
+Either way you get three views: time-order, left-heavy, and sandwich. Each frame's "weight" is gas consumed.
 
 ### Option B — parse it programmatically
 

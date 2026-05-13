@@ -34,7 +34,8 @@ let out = executor
 let profile = out.artifacts.profile.expect("ProfileSink::Capture was set");
 if let ProfileOutput::Json(bytes) = profile {
     std::fs::write("/tmp/auth_profile.json", &bytes)?;
-    println!("Open /tmp/auth_profile.json in https://www.speedscope.app/");
+    println!("View locally: npx speedscope /tmp/auth_profile.json");
+    println!("Or upload to: https://www.speedscope.app/");
 }
 ```
 
