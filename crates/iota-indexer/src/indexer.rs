@@ -5,7 +5,7 @@
 use std::{env, time::Duration};
 
 use anyhow::{Context, Result};
-use iota_data_ingestion_core::ReaderOptions;
+use iota_data_ingestion_core::{IngestionLimit, ReaderOptions};
 use iota_metrics::spawn_monitored_task;
 use prometheus::Registry;
 use tokio_util::sync::CancellationToken;
@@ -85,6 +85,13 @@ impl Indexer {
             cancel.clone(),
         )
         .await?;
+
+        if let Some(stop_at) = config.stop_at_checkpoint {
+            info!("Indexer will stop after processing checkpoint {stop_at}");
+            primary_pipeline
+                .executor
+                .with_ingestion_limit(IngestionLimit::MaxCheckpoint(stop_at));
+        }
 
         let snapshot_pipeline_builder = SnapshotPipelineBuilder::new(
             store.clone(),

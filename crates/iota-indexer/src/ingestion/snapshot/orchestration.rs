@@ -224,9 +224,11 @@ async fn wait_for_initial_snapshot_lag(
         }
 
         if cancel.is_cancelled() {
-            return Err(crate::errors::IndexerError::Generic(
-                "cancelled while waiting for snapshottable data".to_string(),
-            ));
+            // Exit gracefully: the rest of the snapshot pipeline (persist task,
+            // executor) already handles cancel, so we let it spin up and shut
+            // down cleanly rather than treating an early cancel as an error.
+            info!("snapshot pipeline cancelled while waiting for snapshottable data; exiting gracefully");
+            return Ok(());
         }
     }
     Ok(())

@@ -130,7 +130,7 @@ impl PrimaryPipeline {
 async fn start_writer_task(
     mut writer: PrimaryWriter,
     mut next_checkpoint_sequence_number: CheckpointSequenceNumber,
-    cancel: CancellationToken,
+    _cancel: CancellationToken,
 ) -> IndexerResult<()> {
     use futures::StreamExt;
 
@@ -138,11 +138,12 @@ async fn start_writer_task(
     let mut unprocessed = HashMap::new();
     let mut batch = vec![];
 
+    // Drain until the upstream worker pool closes the channel. The cancel
+    // token is observed by the upstream; once it stops sending and the
+    // channel closes, this loop exits naturally. Bailing on cancel here
+    // would drop already-prepared checkpoints and leave the DB watermark
+    // a few cps below the actual --stop-at-checkpoint target.
     while let Some(indexed_checkpoint_batch) = writer.stream.next().await {
-        if cancel.is_cancelled() {
-            break;
-        }
-
         // split the batch into smaller batches per epoch to handle partitioning
         for checkpoint in indexed_checkpoint_batch {
             unprocessed.insert(checkpoint.checkpoint.sequence_number, checkpoint);

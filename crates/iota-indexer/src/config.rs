@@ -228,6 +228,11 @@ pub struct IngestionConfig {
         env = "CHECKPOINT_PROCESSING_BATCH_DATA_LIMIT",
     )]
     pub checkpoint_download_queue_size_bytes: usize,
+
+    /// Stop ingestion gracefully after processing this checkpoint sequence
+    /// number (inclusive). Intended for testing and offline backfills.
+    #[arg(long)]
+    pub stop_at_checkpoint: Option<u64>,
 }
 
 impl IngestionConfig {
@@ -244,6 +249,7 @@ impl Default for IngestionConfig {
             checkpoint_download_timeout: Self::DEFAULT_CHECKPOINT_DOWNLOAD_TIMEOUT,
             checkpoint_download_queue_size_bytes:
                 Self::DEFAULT_CHECKPOINT_DOWNLOAD_QUEUE_SIZE_BYTES,
+            stop_at_checkpoint: None,
         }
     }
 }
@@ -683,6 +689,7 @@ pub mod deprecated {
                         checkpoint_download_queue_size: download_queue_size,
                         checkpoint_download_timeout: ingestion_reader_timeout_secs,
                         checkpoint_download_queue_size_bytes: data_limit,
+                        stop_at_checkpoint: None,
                     },
                     snapshot_config: SnapshotLagConfig {
                         snapshot_min_lag,
