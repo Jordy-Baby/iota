@@ -170,6 +170,8 @@ members = [
   "iota-execution/latest/iota-adapter",
   "iota-execution/latest/iota-move-natives",
   "iota-execution/latest/iota-verifier",
+  # Local-only QA tool, gitignored directory; not part of upstream.
+  "consistent_views_qa_scripts/workload/rs",
 ]
 
 [workspace.package]

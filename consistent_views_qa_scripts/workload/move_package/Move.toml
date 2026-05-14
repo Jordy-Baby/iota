@@ -1,0 +1,10 @@
+[package]
+name = "ConsistentViewsWorkload"
+version = "0.0.1"
+edition = "2024"
+
+[dependencies]
+Iota = { local = "../../../crates/iota-framework/packages/iota-framework" }
+
+[addresses]
+workload = "0x0"

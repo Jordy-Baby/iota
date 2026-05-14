@@ -1,0 +1,26 @@
+[package]
+name = "qa-workload"
+version = "0.0.1"
+edition = "2021"
+publish = false
+
+[dependencies]
+anyhow.workspace = true
+clap = { workspace = true, features = ["derive"] }
+move-package.workspace = true
+move-compiler.workspace = true
+reqwest.workspace = true
+serde_json.workspace = true
+serde.workspace = true
+tokio = { workspace = true, features = ["full"] }
+tracing.workspace = true
+
+iota-config.workspace = true
+iota-keys.workspace = true
+iota-move-build.workspace = true
+iota-sdk.workspace = true
+iota-sdk-types.workspace = true
+
+[[bin]]
+name = "qa-workload"
+path = "src/main.rs"

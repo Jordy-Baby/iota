@@ -30,6 +30,12 @@ services:
           --remote-migration-snapshots=https://stardust-objects.s3.eu-central-1.amazonaws.com/iota/alphanet/test/stardust_object_snapshot.bin.gz \
           --delegator=0x4f72f788cdf4bb478cf9809e878e6163d5b351c82c11f1ea28750430752e7892 &&
         sed -i 's/enable-grpc-api: false/enable-grpc-api: true/' /root/.iota/iota_config/fullnode.yaml &&
+        # Disable object pruning everywhere: fullnode, per-validator configs,
+        # and the network.yaml (which the validators actually read from on
+        # startup). u64::MAX disables the object pruner (see
+        # iota_config::node::AuthorityStorePruningConfig). The regex tolerates
+        # any indent so it catches network.yaml's nested copy too.
+        sed -i 's/^\([ ]*\)num-epochs-to-retain: 0$/\1num-epochs-to-retain: 18446744073709551615/' /root/.iota/iota_config/fullnode.yaml /root/.iota/iota_config/127.0.0.1-*.yaml /root/.iota/iota_config/network.yaml &&
         iota-localnet start \
           --with-faucet=0.0.0.0:9123 \
           --fullnode-rpc-port=9000
