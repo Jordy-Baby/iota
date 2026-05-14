@@ -199,29 +199,28 @@ def ensure_worktree(repo_root: Path, worktree_dir: Path, branch: str,
             str(wt_path), branch,
         ], cwd=repo_root)
 
-    # Reset to local branch tip so the worktree is in a known state, then cherry-pick the flag.
+    # Reset to local branch tip so the worktree is in a known state, then
+    # cherry-pick every commit on flag_branch that isn't already in HEAD. The
+    # flag branch carries multiple commits (indexer code changes + QA scripts);
+    # we apply them all so the worktree's iota-indexer build has the test-only
+    # flags wired in.
     run(["git", "reset", "--hard", branch], cwd=wt_path)
-
-    flag_sha = subprocess.run(
-        ["git", "rev-parse", flag_branch],
+    commits = subprocess.run(
+        ["git", "rev-list", "--reverse", f"HEAD..{flag_branch}"],
         cwd=wt_path, check=True, capture_output=True, text=True,
-    ).stdout.strip()
-    is_ancestor = subprocess.run(
-        ["git", "merge-base", "--is-ancestor", flag_sha, "HEAD"],
-        cwd=wt_path,
-    ).returncode == 0
-    if is_ancestor:
-        log(f"{branch}: flag commit {flag_sha[:10]} already in history; skipping cherry-pick")
+    ).stdout.strip().split()
+    if not commits:
+        log(f"{branch}: flag branch {flag_branch} already in history; nothing to cherry-pick")
     else:
-        log(f"{branch}: cherry-picking {flag_sha[:10]} ({flag_branch} tip)")
+        log(f"{branch}: cherry-picking {len(commits)} commit(s) from {flag_branch}")
         try:
-            run(["git", "cherry-pick", flag_sha], cwd=wt_path)
+            run(["git", "cherry-pick"] + commits, cwd=wt_path)
         except subprocess.CalledProcessError as e:
             run(["git", "cherry-pick", "--abort"], cwd=wt_path, check=False)
             sys.exit(
-                f"cherry-pick of {flag_branch} ({flag_sha[:10]}) into {branch} failed "
-                f"(likely a conflict). Resolve manually in {wt_path}, then re-run with "
-                f"--reuse-worktrees.\nUnderlying error: {e}"
+                f"cherry-pick of {len(commits)} commits from {flag_branch} into {branch} "
+                f"failed (likely a conflict). Resolve manually in {wt_path}, then re-run "
+                f"with --reuse-worktrees.\nUnderlying error: {e}"
             )
     return wt_path
 

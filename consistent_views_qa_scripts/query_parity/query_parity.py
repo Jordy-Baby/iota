@@ -207,15 +207,19 @@ def ensure_worktree(repo_root: Path, worktree_dir: Path, branch: str,
             str(wt_path), branch,
         ], cwd=repo_root, check=True)
     subprocess.run(["git", "reset", "--hard", branch], cwd=wt_path, check=True)
-    flag_sha = subprocess.run(["git", "rev-parse", flag_branch],
-                              cwd=wt_path, check=True, capture_output=True, text=True).stdout.strip()
-    if subprocess.run(["git", "merge-base", "--is-ancestor", flag_sha, "HEAD"],
-                      cwd=wt_path).returncode != 0:
+    # Cherry-pick every commit on flag_branch that isn't already in HEAD (the
+    # branch carries multiple commits, of which the indexer code changes need
+    # to be applied for the build).
+    commits = subprocess.run(
+        ["git", "rev-list", "--reverse", f"HEAD..{flag_branch}"],
+        cwd=wt_path, check=True, capture_output=True, text=True,
+    ).stdout.strip().split()
+    if commits:
         try:
-            subprocess.run(["git", "cherry-pick", flag_sha], cwd=wt_path, check=True)
+            subprocess.run(["git", "cherry-pick"] + commits, cwd=wt_path, check=True)
         except subprocess.CalledProcessError as e:
             subprocess.run(["git", "cherry-pick", "--abort"], cwd=wt_path, check=False)
-            sys.exit(f"cherry-pick {flag_sha[:10]} into {branch} failed: {e}")
+            sys.exit(f"cherry-pick of {len(commits)} commits into {branch} failed: {e}")
     return wt_path
 
 
