@@ -83,6 +83,7 @@ class Args:
     graphql_port_a: int
     graphql_port_b: int
     graphql_rpc_binary: Optional[Path]
+    catchup_attempts: int
     keep_dbs: bool
     indexer_log_dir: Path
 
@@ -134,6 +135,8 @@ def parse_args() -> Args:
     p.add_argument("--graphql-rpc-binary", type=Path, default=None,
                    help="iota-graphql-rpc binary. Default: NEW worktree's "
                         "target/release/iota-graphql-rpc.")
+    p.add_argument("--catchup-attempts", type=int, default=30,
+                   help="Max iterations for the watermark catch-up loop.")
     p.add_argument("--keep-dbs", action="store_true",
                    help="Don't drop db_a/db_b after comparison (for manual inspection).")
     p.add_argument("--indexer-log-dir", type=Path,
@@ -145,6 +148,19 @@ def parse_args() -> Args:
 
 def log(msg: str) -> None:
     print(f"[migration-parity] {msg}", flush=True)
+
+
+_phase_state: list = [None, None]
+
+
+def phase(msg: str) -> None:
+    """Log a phase header, prefixed with elapsed time since the previous phase."""
+    now = time.perf_counter()
+    if _phase_state[0] is not None:
+        log(f"[{_phase_state[1]!r} took {now - _phase_state[0]:.1f}s]")
+    log(msg)
+    _phase_state[0] = now
+    _phase_state[1] = msg
 
 
 def run(cmd: list[str], *, cwd: Optional[Path] = None, env: Optional[dict] = None,
@@ -604,7 +620,7 @@ def main() -> int:
     if not (args.repo_root / ".git").exists():
         sys.exit(f"--repo-root {args.repo_root} does not look like a git repository")
 
-    log("phase 0/4: prepare binaries")
+    phase("phase 0/4: prepare binaries")
     old_binary = prepare_binary(
         "OLD", args.base_branch, args.flag_branch,
         args.repo_root, args.worktree_dir, args.old_binary,
@@ -626,11 +642,11 @@ def main() -> int:
         reuse_worktrees=args.reuse_worktrees, skip_rebuild=args.skip_rebuild,
     )
 
-    log("phase 1/4: reset databases")
+    phase("phase 1/4: reset databases")
     reset_db(args.pg_url, DB_A)
     reset_db(args.pg_url, DB_B)
 
-    log("phase 2/4: sync both indexers to checkpoint N")
+    phase("phase 2/4: sync both indexers to checkpoint N")
     run_indexer(
         old_binary,
         db_url(args.pg_url, DB_A),
@@ -655,7 +671,7 @@ def main() -> int:
     # advance only the TRAILING DB toward the leader (with a small overshoot
     # to overcome per-run cancel-time loss). Repeat until they match.
     settled = None
-    for attempt in range(30):
+    for attempt in range(args.catchup_attempts):
         cp_a = get_watermark(args.pg_url, DB_A)
         cp_b = get_watermark(args.pg_url, DB_B)
         log(f"catch-up attempt {attempt}: db_a={cp_a} db_b={cp_b}")
@@ -688,7 +704,7 @@ def main() -> int:
     # parity diff.
     assert_checkpointed_objects_setup(args.pg_url)
 
-    log("phase 3/4: apply NEW migration to db_a (no further ingestion)")
+    phase("phase 3/4: apply NEW migration to db_a (no further ingestion)")
     # Pass stop_at = current db_a watermark so the NEW indexer's executor
     # immediately exits (next available cp will be > limit). Diesel migrations
     # run before the executor starts, so they are applied regardless.
@@ -702,16 +718,18 @@ def main() -> int:
         tag="NEW-migrate->db_a",
     )
 
-    log("phase 4a/4: check availableRange via graphql-rpc")
+    phase("phase 4a/4: check availableRange via graphql-rpc")
     check_available_range(args, settled)
 
-    log("phase 4b/4: compare checkpointed_objects")
+    phase("phase 4b/4: compare checkpointed_objects")
     parity = compare_checkpointed_objects(args.pg_url)
 
+    phase("cleanup")
     if not args.keep_dbs:
-        log("cleanup: dropping databases")
+        log("dropping databases")
         run_psql(args.pg_url, f'DROP DATABASE IF EXISTS "{DB_A}" WITH (FORCE);')
         run_psql(args.pg_url, f'DROP DATABASE IF EXISTS "{DB_B}" WITH (FORCE);')
+    phase("done")
 
     return 0 if parity else 1
 

@@ -67,6 +67,7 @@ class Args:
     reuse_worktrees: bool
     skip_rebuild: bool
     page_size: int
+    catchup_attempts: int
     forward_port: int
     backward_port: int
     keep_db: bool
@@ -105,6 +106,8 @@ def parse_args() -> Args:
     p.add_argument("--reuse-worktrees", action="store_true")
     p.add_argument("--skip-rebuild", action="store_true")
     p.add_argument("--page-size", type=int, default=5)
+    p.add_argument("--catchup-attempts", type=int, default=60,
+                   help="Max iterations for the watermark catch-up loop.")
     p.add_argument("--forward-port", type=int, default=18011)
     p.add_argument("--backward-port", type=int, default=18012)
     p.add_argument("--keep-db", action="store_true")
@@ -619,7 +622,7 @@ def main() -> int:
         log("phase 1: reusing existing dbs (catching up if needed)")
 
     # Catch-up loop: advance trailing DB until watermarks match.
-    for attempt in range(60):
+    for attempt in range(args.catchup_attempts):
         cp_old = get_watermark(args.pg_url, DB_OLD)
         cp_new = get_watermark(args.pg_url, DB_NEW)
         log(f"catch-up #{attempt}: old={cp_old} new={cp_new}")
@@ -637,7 +640,7 @@ def main() -> int:
                         args.log_dir / f"new_catchup_{attempt}.log",
                         tag=f"NEW-catchup#{attempt}")
     else:
-        sys.exit("watermarks didn't converge after 60 attempts")
+        sys.exit(f"watermarks didn't converge after {args.catchup_attempts} attempts")
     settled = get_watermark(args.pg_url, DB_OLD)
     log(f"both DBs settled at cp {settled}")
 
