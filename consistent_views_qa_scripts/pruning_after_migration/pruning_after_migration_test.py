@@ -435,7 +435,30 @@ def main() -> int:
         sys.exit(f"pruning watermark {bw_min} did not advance past the migration seed "
                  f"({seed_floor}); pruner didn't fire after migration")
 
-    # No rows below the floor.
+    # Pruning is two-phased: (1) advance `min_available_cp` (the GraphQL-visible
+    # floor), (2) delete rows < min_available_cp in chunks (DELAY_BETWEEN_PRUNING_CHUNKS
+    # apart). On big DBs the second phase trails the first. Wait for the deletion
+    # to catch up (`lowest_unpruned_key` >= `min_available_cp`) before asserting
+    # row-level invariants, otherwise we'd flag legitimate in-flight rows.
+    log(f"  waiting for pruner deletion to drain up to min_available_cp={bw_min}...")
+    for attempt in range(120):  # up to 10 min
+        luk_s = query_psql(
+            args.pg_url,
+            "SELECT lowest_unpruned_key FROM watermarks WHERE entity = 'objects_backward_history'",
+            args.db_name,
+        )
+        luk = int(luk_s) if luk_s else 0
+        if luk >= bw_min:
+            log(f"  pruner drained: lowest_unpruned_key={luk} >= min_available_cp={bw_min}")
+            break
+        if attempt % 12 == 0:
+            log(f"    lowest_unpruned_key={luk} still behind {bw_min}; waiting...")
+        time.sleep(5)
+    else:
+        sys.exit(f"pruner didn't drain to min_available_cp={bw_min} in 10 min "
+                 f"(stuck at lowest_unpruned_key={luk})")
+
+    # Row invariant: no rows below the deletion boundary.
     row_check = query_psql(
         args.pg_url,
         "SELECT COUNT(*), COALESCE(MIN(superseded_at_checkpoint)::text, 'NULL'), "
