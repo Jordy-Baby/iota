@@ -241,20 +241,32 @@ def ensure_worktree(repo_root: Path, worktree_dir: Path, branch: str,
     return wt_path
 
 
-def build_indexer(worktree: Path, *, skip_if_exists: bool) -> Path:
-    """Build iota-indexer in `worktree`; return the binary path."""
+def build_indexer(worktree: Path, *, skip_if_exists: bool,
+                  also_graphql_rpc: bool = False) -> Path:
+    """Build iota-indexer in `worktree`; return the binary path.
+
+    When `also_graphql_rpc` is set, additionally build iota-graphql-rpc — used
+    for the NEW worktree which is queried for the availableRange invariant
+    check after the migration is applied.
+    """
     binary = worktree / "target" / "release" / "iota-indexer"
-    if skip_if_exists and binary.exists():
-        log(f"reusing existing binary at {binary}")
+    graphql = worktree / "target" / "release" / "iota-graphql-rpc"
+    have_indexer = binary.exists()
+    have_graphql = graphql.exists()
+    needed = (not skip_if_exists) or (not have_indexer) or (also_graphql_rpc and not have_graphql)
+    if not needed:
+        log(f"reusing existing binaries in {worktree}")
         return binary
     # Building iota-node alongside enables tokio's "signal" feature via feature
     # unification, which the indexer needs for SIGTERM handling.
-    run([
-        "cargo", "build", "--release",
-        "-p", "iota-indexer", "-p", "iota-node",
-    ], cwd=worktree)
+    packages = ["-p", "iota-indexer", "-p", "iota-node"]
+    if also_graphql_rpc:
+        packages += ["-p", "iota-graphql-rpc"]
+    run(["cargo", "build", "--release", *packages], cwd=worktree)
     if not binary.is_file():
         sys.exit(f"expected binary at {binary} but it was not produced")
+    if also_graphql_rpc and not graphql.is_file():
+        sys.exit(f"expected binary at {graphql} but it was not produced")
     return binary
 
 
@@ -589,7 +601,8 @@ def prepare_binary(
     log(f"[{side}] preparing worktree for branch {branch} (+ flag {flag_branch})")
     wt = ensure_worktree(repo_root, worktree_dir, branch, flag_branch, reuse=reuse_worktrees)
     log(f"[{side}] building indexer in {wt}")
-    return build_indexer(wt, skip_if_exists=skip_rebuild)
+    # NEW side also needs iota-graphql-rpc for the availableRange check.
+    return build_indexer(wt, skip_if_exists=skip_rebuild, also_graphql_rpc=(side == "NEW"))
 
 
 def resolve_stop_at_checkpoint(args: Args) -> int:
@@ -626,21 +639,21 @@ def main() -> int:
         args.repo_root, args.worktree_dir, args.old_binary,
         reuse_worktrees=args.reuse_worktrees, skip_rebuild=args.skip_rebuild,
     )
-    # graphql-rpc default: NEW worktree's release binary.
+    new_binary = prepare_binary(
+        "NEW", args.backward_branch, args.flag_branch,
+        args.repo_root, args.worktree_dir, args.new_binary,
+        reuse_worktrees=args.reuse_worktrees, skip_rebuild=args.skip_rebuild,
+    )
+
+    # graphql-rpc binary now exists in the NEW worktree (built by the NEW
+    # prepare_binary call above). Resolve the default path.
     if args.graphql_rpc_binary is None:
         new_wt_name = sanitize_branch(args.backward_branch)
         args.graphql_rpc_binary = (
             args.worktree_dir / new_wt_name / "target" / "release" / "iota-graphql-rpc"
         )
     if not args.graphql_rpc_binary.is_file():
-        sys.exit(f"iota-graphql-rpc binary not found at {args.graphql_rpc_binary}; "
-                 f"build it in the NEW worktree first.")
-
-    new_binary = prepare_binary(
-        "NEW", args.backward_branch, args.flag_branch,
-        args.repo_root, args.worktree_dir, args.new_binary,
-        reuse_worktrees=args.reuse_worktrees, skip_rebuild=args.skip_rebuild,
-    )
+        sys.exit(f"iota-graphql-rpc binary not found at {args.graphql_rpc_binary}")
 
     phase("phase 1/4: reset databases")
     reset_db(args.pg_url, DB_A)
