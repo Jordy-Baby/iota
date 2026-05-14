@@ -37,7 +37,7 @@ from urllib.parse import urlparse
 DB_NAME = "pruning_test"
 
 DEFAULT_BACKWARD_BRANCH = "infra/feat/backward-history-consistent-views"
-DEFAULT_FLAG_BRANCH = "sc-platform/indexer-stop-at-checkpoint"
+DEFAULT_FLAG_BRANCH = "sc-platform/consistent-views-qa"
 
 DEFAULT_TABLES_TO_PRUNE = [
     "objects_history",

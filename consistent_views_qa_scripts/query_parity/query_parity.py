@@ -46,7 +46,7 @@ DB_NEW = "query_parity_new"
 
 DEFAULT_BASE_BRANCH = "develop"
 DEFAULT_BACKWARD_BRANCH = "infra/feat/backward-history-consistent-views"
-DEFAULT_FLAG_BRANCH = "sc-platform/indexer-stop-at-checkpoint"
+DEFAULT_FLAG_BRANCH = "sc-platform/consistent-views-qa"
 
 
 @dataclasses.dataclass

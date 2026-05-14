@@ -13,7 +13,7 @@ Five scripts, one per test plan item:
 | 5 | Migration on a big DB | manual; benchmark notes in `../pruning_qa_scripts/checkpointed_objects_migration_benchmark.md` |
 
 The scripts rely on test-only indexer changes that live on the
-`sc-platform/indexer-stop-at-checkpoint` branch (the "flag branch"):
+`sc-platform/consistent-views-qa` branch (the "flag branch"):
 
 - `--stop-at-checkpoint=N` on `iota-indexer indexer` for deterministic stops.
 - Snapshot pipeline exits gracefully on cancel during its initial-lag wait.
@@ -33,7 +33,7 @@ Without those changes the scripts won't behave deterministically.
   - `develop` — used as the OLD-code baseline.
   - `infra/feat/backward-history-consistent-views` — the NEW (backward-history)
     feature branch.
-  - `sc-platform/indexer-stop-at-checkpoint` — the QA flag branch (this branch).
+  - `sc-platform/consistent-views-qa` — the QA flag branch (this branch).
 - Sibling worktrees managed automatically under `../migration_parity_worktrees/`.
 - A workload manifest (used by tests 1, 2 to seed object IDs / target cp).
 
@@ -81,7 +81,7 @@ You can pre-build manually if you prefer:
 git worktree add -b qa/base   ../migration_parity_worktrees/develop                                       develop
 git worktree add -b qa/bwd    ../migration_parity_worktrees/infra_feat_backward-history-consistent-views  infra/feat/backward-history-consistent-views
 for wt in ../migration_parity_worktrees/develop ../migration_parity_worktrees/infra_feat_backward-history-consistent-views; do
-  (cd $wt && git cherry-pick sc-platform/indexer-stop-at-checkpoint && \
+  (cd $wt && git cherry-pick sc-platform/consistent-views-qa && \
    cargo build --release -p iota-indexer -p iota-node -p iota-graphql-rpc)
 done
 ```

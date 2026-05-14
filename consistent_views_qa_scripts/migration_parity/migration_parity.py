@@ -32,7 +32,7 @@ Example:
 Override branches:
     --base-branch develop \\
     --backward-branch infra/feat/backward-history-consistent-views \\
-    --flag-branch sc-platform/indexer-stop-at-checkpoint
+    --flag-branch sc-platform/consistent-views-qa
 
 Skip build (reuse last binary, faster iteration):
     --skip-rebuild --reuse-worktrees
@@ -60,7 +60,7 @@ DB_B = "migration_parity_b"
 
 DEFAULT_BASE_BRANCH = "develop"
 DEFAULT_BACKWARD_BRANCH = "infra/feat/backward-history-consistent-views"
-DEFAULT_FLAG_BRANCH = "sc-platform/indexer-stop-at-checkpoint"
+DEFAULT_FLAG_BRANCH = "sc-platform/consistent-views-qa"
 
 
 @dataclasses.dataclass

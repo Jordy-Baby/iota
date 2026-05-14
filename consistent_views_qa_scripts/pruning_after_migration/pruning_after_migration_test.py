@@ -42,7 +42,7 @@ DB_NAME = "pruning_after_migration"
 
 DEFAULT_BASE_BRANCH = "develop"
 DEFAULT_BACKWARD_BRANCH = "infra/feat/backward-history-consistent-views"
-DEFAULT_FLAG_BRANCH = "sc-platform/indexer-stop-at-checkpoint"
+DEFAULT_FLAG_BRANCH = "sc-platform/consistent-views-qa"
 
 DEFAULT_TABLES_TO_PRUNE = [
     "objects_history",
