@@ -2,7 +2,7 @@
 
 End-to-end tests for the backward-history consistency model
 (issue [#11500](https://github.com/iotaledger/iota/issues/11500)).
-Five scripts, one per test plan item:
+Six scripts, one per test plan item plus a perf probe:
 
 | # | Test | Script |
 |---|---|---|
@@ -11,6 +11,7 @@ Five scripts, one per test plan item:
 | 3 | Pruning | [`pruning/pruning_test.py`](pruning/pruning_test.py) |
 | 4 | Pruning after migration | [`pruning_after_migration/pruning_after_migration_test.py`](pruning_after_migration/pruning_after_migration_test.py) |
 | 5 | Migration on a big DB | manual; benchmark notes in `../pruning_qa_scripts/checkpointed_objects_migration_benchmark.md` |
+| 6 | Query performance (cursor-pinned + version-pinned) | [`query_perf/query_perf.py`](query_perf/query_perf.py) |
 
 The scripts rely on test-only indexer changes that live on the
 `sc-platform/consistent-views-qa` branch (the "flag branch"):
@@ -168,6 +169,89 @@ Last measurement (Apr 8 2026, 15.2M synthetic objects matching mainnet
 distribution) is **8m28s** — see
 `pruning_qa_scripts/checkpointed_objects_migration_benchmark.md` for the full
 setup.
+
+### 6. Query performance
+
+Standalone perf probe — does *not* spin up its own indexer/graphql. Issues
+paginated `objects(...)` queries against a running NEW `iota-graphql-rpc`,
+sweeping the cursor's encoded `checkpoint_viewed_at` (BCS-crafted client-side
+so you don't need to wait in real time) and the parent/object versions.
+Reports p50 / p95 / max per bucket.
+
+```sh
+# 1. Start a NEW iota-graphql-rpc against an existing NEW-indexed DB
+.../target/release/iota-graphql-rpc start-server \
+  --port 9125 --host 0.0.0.0 \
+  --db-url postgres://<user>:<pwd>@localhost:5432/<db>
+
+# 2. Run the perf script
+python3 consistent_views_qa_scripts/query_perf/query_perf.py \
+  --url http://localhost:9125/graphql \
+  --shape all   # ids | type | owner | empty | version-pin | object-keys | dynamic-fields | all
+```
+
+Eight shapes are supported; each can be parameterised with the worst-case
+filter constants for your environment (`--type`, `--owner`, `--ids`,
+`--version-pin-address`, `--df-parent-address`, `--df-latest-version`).
+Defaults are the staging worst-case constants. Tests should be run with the
+indexer **stopped** so `latest_cp` is stable — otherwise the lookback window
+moves between probe and query and deep-K cursor-pinned samples may fall
+outside it.
+
+
+## Running on staging
+
+The QA branch is pushed to the staging host's repo (`/root/repositories/tomxey/iota`).
+On staging:
+
+```sh
+ssh staging
+cd /root/repositories/tomxey/iota
+export PATH=/root/.cargo/bin:$PATH
+```
+
+Differences from localnet:
+
+- **No localnet docker stack** — staging has real validators (`validator-0/1/2`)
+  and a fullnode (`access-0`) on the host. Postgres is in a docker container
+  at `localhost:5432`. Use `postgres://iota_indexer:iota_indexer@localhost:5432`
+  and `--remote-store-url http://localhost:50051`.
+- **No workload generation** — staging has its own traffic; tests 1 and 2 use
+  `--stop-at-checkpoint <N>` instead of a workload manifest, and the manifest
+  flags can be omitted.
+- **`qa/backward-merge-base` branch** — to isolate the test to the
+  backward-feature commits only (excluding unrelated drift on `develop`), the
+  parity tests are run with `--base-branch qa/backward-merge-base`. Create
+  this local branch once:
+  ```sh
+  git branch qa/backward-merge-base \
+    $(git merge-base develop infra/feat/backward-history-consistent-views)
+  ```
+- **Long runs** — wrap each test in `tmux new-session -d -s <name> '...'` so it
+  survives ssh disconnects.
+
+Example: migration parity at cp 150 000:
+
+```sh
+tmux new-session -d -s parity 'python3 -u \
+  consistent_views_qa_scripts/migration_parity/migration_parity.py \
+    --stop-at-checkpoint 150000 \
+    --base-branch qa/backward-merge-base \
+    --pg-url postgres://iota_indexer:iota_indexer@localhost:5432 \
+    --remote-store-url http://localhost:50051 \
+    --catchup-attempts 100 \
+    --reuse-worktrees --skip-rebuild \
+    --keep-dbs \
+    > /tmp/migration_parity.log 2>&1'
+```
+
+Captured results live in [`staging_results.md`](staging_results.md).
+
+For test 6 on staging see also the heavy-data inspection of
+`objects_backward_history` to pick worst-case filter constants — the defaults
+already hard-code the staging worst case (Random's inner Versioned as the
+`dynamic-fields` parent, Clock as the `version-pin` / `object-keys` target,
+etc.).
 
 
 ## Tearing down
