@@ -142,6 +142,26 @@ impl<F> CachingStore<F> {
         read_guard(&self.objects).get(id).cloned()
     }
 
+    /// Snapshot every cached object plus every package override into an owned
+    /// `Vec`. Package overrides take precedence over the object cache for
+    /// matching IDs — same shadowing rule [`Self::get_or_fetch`] applies.
+    pub fn snapshot_cached(&self) -> Vec<Object> {
+        let overrides = read_guard(&self.package_overrides);
+        let objects = read_guard(&self.objects);
+        let mut out: Vec<Object> = Vec::with_capacity(objects.len() + overrides.len());
+        for (id, obj) in overrides.iter() {
+            out.push(obj.clone());
+            // skip the cached version for the same ID — overrides shadow it
+            let _ = id;
+        }
+        for (id, obj) in objects.iter() {
+            if !overrides.contains_key(id) {
+                out.push(obj.clone());
+            }
+        }
+        out
+    }
+
     /// Look up a package override without touching the object cache or remote
     /// fetcher.
     fn get_package_override(&self, id: &ObjectID) -> Option<Object> {

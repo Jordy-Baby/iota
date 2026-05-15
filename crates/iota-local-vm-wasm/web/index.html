@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>IOTA Local VM — WASM demo</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main>
+    <header>
+      <h1>IOTA Local VM (WASM)</h1>
+      <p class="lede">
+        The full IOTA Move VM compiled to WebAssembly. Paste a base-64 BCS
+        <code>TransactionData</code>; we fetch the input objects from the
+        chosen network and simulate locally in this tab — no signing, no
+        submission. Optionally provide the wallet's raw signature blob(s) to
+        verify them locally, including <code>MoveAuthenticator</code>
+        signatures whose accept rule lives in Move and can't be checked
+        cryptographically.
+      </p>
+    </header>
+
+    <section class="form">
+      <label>
+        <span>Network</span>
+        <select id="network">
+          <option value="mainnet">mainnet</option>
+          <option value="testnet">testnet</option>
+          <option value="devnet" selected>devnet</option>
+          <option value="localnet">localnet</option>
+        </select>
+      </label>
+
+      <label>
+        <span>Base64 transaction bytes (BCS-encoded <code>TransactionData</code>)</span>
+        <textarea id="txInput" rows="6" spellcheck="false" placeholder="AAADAAg..."></textarea>
+      </label>
+
+      <label>
+        <span>
+          Signatures — one base-64-encoded raw signature blob per line
+          <span style="text-transform:none;letter-spacing:0">(optional;
+          leave empty for an unsigned dev-inspect run)</span>
+        </span>
+        <textarea id="sigInput" rows="3" spellcheck="false" placeholder="(none)"></textarea>
+      </label>
+
+      <div class="row">
+        <button id="loadStake" type="button">Sample: stake tx (devnet)</button>
+        <button id="loadMoveAuthValid" type="button">Sample: MoveAuthenticator (valid)</button>
+        <button id="loadMoveAuthInvalid" type="button">Sample: MoveAuthenticator (invalid sig)</button>
+        <label class="strict">
+          <input type="checkbox" id="strict" />
+          <span>Strict mode (validator input checks)</span>
+        </label>
+        <button id="run" type="button" class="primary">Simulate</button>
+      </div>
+    </section>
+
+    <section id="log" class="log"></section>
+    <section id="results" class="results"></section>
+  </main>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

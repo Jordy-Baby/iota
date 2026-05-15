@@ -10,8 +10,8 @@ use std::{path::PathBuf, str::FromStr};
 use iota_json_rpc_types::IotaTransactionBlockEffectsAPI;
 use iota_keys::keystore::AccountKeystore;
 use iota_local_executor::{
-    DebugConfig, GrpcExecutor, ObjectFetchMode, ProfileOutput, ProfileSink, SenderSignedData,
-    VmChecks,
+    ChainInfo, DebugConfig, GrpcExecutor, ObjectFetchMode, ProfileOutput, ProfileSink,
+    SenderSignedData, VmChecks,
 };
 use iota_sdk_types::SharedObjectReference;
 use iota_test_transaction_builder::{TestTransactionBuilder, publish_package};
@@ -441,6 +441,89 @@ async fn simulate_signed_transaction_invalid_signature() {
 // MoveAuthenticator signature verification tests
 // ---------------------------------------------------------------------------
 
+/// When `IOTA_LOCAL_VM_WASM_FIXTURE_DIR` is set, persist a `<name>.json` file
+/// into that directory containing everything the wasm-side `OfflineExecutor`
+/// needs to replay this transaction:
+///
+/// - chain info (protocol version, RGP, epoch id + timestamp),
+/// - the BCS-encoded `TransactionData` (`tx_b64`),
+/// - the raw `GenericSignature` blobs (`signatures`, base-64 of the `[flag ||
+///   …]` form the wallet holds),
+/// - and every cached object the executor touched, minus the built-in framework
+///   packages (the wasm side preloads those via
+///   `InMemoryStore::with_framework`).
+///
+/// Used by `crates/iota-local-vm-wasm/web/` to ship a real MoveAuthenticator
+/// sample (happy + invalid-sig) without contacting the network.
+fn dump_wasm_fixture(
+    name: &str,
+    description: &str,
+    chain_info: ChainInfo,
+    signed_data: &SenderSignedData,
+    objects: Vec<iota_types::object::Object>,
+) {
+    use std::{collections::BTreeSet, env, fs, path::PathBuf};
+
+    use base64::{Engine, engine::general_purpose::STANDARD};
+
+    let Some(dir) = env::var_os("IOTA_LOCAL_VM_WASM_FIXTURE_DIR") else {
+        return;
+    };
+    let dir = PathBuf::from(dir);
+    fs::create_dir_all(&dir).expect("create fixture dir");
+
+    let framework_ids: BTreeSet<ObjectID> = iota_framework::BuiltInFramework::genesis_objects()
+        .map(|o| o.id())
+        .collect();
+
+    let tx_bytes =
+        bcs::to_bytes(&signed_data.intent_message().value).expect("bcs encode TransactionData");
+    let tx_b64 = STANDARD.encode(&tx_bytes);
+
+    let signatures: Vec<String> = signed_data
+        .inner()
+        .tx_signatures
+        .iter()
+        .map(|s| STANDARD.encode(s.as_ref()))
+        .collect();
+
+    let mut object_entries: Vec<serde_json::Value> = Vec::new();
+    let mut seen: BTreeSet<ObjectID> = BTreeSet::new();
+    for obj in objects {
+        if framework_ids.contains(&obj.id()) {
+            continue;
+        }
+        if !seen.insert(obj.id()) {
+            continue;
+        }
+        let bcs_b64 = STANDARD.encode(bcs::to_bytes(&obj).expect("bcs encode Object"));
+        object_entries.push(serde_json::json!({
+            "id_hex": obj.id().to_hex(),
+            "bcs_b64": bcs_b64,
+        }));
+    }
+
+    let payload = serde_json::json!({
+        "name": name,
+        "description": description,
+        "protocol_version": chain_info.protocol_version.as_u64(),
+        "reference_gas_price": chain_info.reference_gas_price,
+        "epoch_id": chain_info.epoch_id,
+        "epoch_timestamp_ms": chain_info.epoch_timestamp_ms,
+        "tx_b64": tx_b64,
+        "signatures": signatures,
+        "objects": object_entries,
+    });
+
+    let path = dir.join(format!("{name}.json"));
+    fs::write(
+        &path,
+        serde_json::to_string_pretty(&payload).expect("json encode"),
+    )
+    .expect("write fixture file");
+    eprintln!("wrote wasm fixture: {}", path.display());
+}
+
 // Path to the abstract_account Move package (relative to e2e-tests crate).
 const AA_PACKAGE_PATH: &str = "../iota-e2e-tests/tests/abstract_account/abstract_account";
 const AA_MODULE_NAME: &str = "abstract_account";
@@ -623,9 +706,12 @@ async fn simulate_signed_transaction_move_authenticator_valid() {
         .await
         .unwrap();
 
+    let chain_info = ChainInfo::fetch_from_grpc(&grpc_client)
+        .await
+        .expect("fetch chain info");
     let local = GrpcExecutor::new(grpc_client).await.unwrap();
     let result = local
-        .simulate_signed_transaction(signed_data, VmChecks::Disabled)
+        .simulate_signed_transaction(signed_data.clone(), VmChecks::Disabled)
         .await
         .expect("MoveAuthenticator simulate_signed_transaction should succeed");
 
@@ -633,6 +719,15 @@ async fn simulate_signed_transaction_move_authenticator_valid() {
         result.effects.status().is_success(),
         "MoveAuthenticator transaction should succeed: {:?}",
         result.effects.status()
+    );
+
+    dump_wasm_fixture(
+        "move_auth_free_access_valid",
+        "MoveAuthenticator (authenticate_free_access): \
+         the authenticator function unconditionally accepts, so this verifies successfully.",
+        chain_info,
+        &signed_data,
+        local.store().snapshot_cached(),
     );
 }
 
@@ -705,9 +800,12 @@ async fn simulate_signed_transaction_move_authenticator_invalid_args() {
         .await
         .unwrap();
 
+    let chain_info = ChainInfo::fetch_from_grpc(&grpc_client)
+        .await
+        .expect("fetch chain info");
     let local = GrpcExecutor::new(grpc_client).await.unwrap();
     let result = local
-        .simulate_signed_transaction(signed_data, VmChecks::Disabled)
+        .simulate_signed_transaction(signed_data.clone(), VmChecks::Disabled)
         .await
         .expect("should return effects even on auth failure");
 
@@ -717,6 +815,15 @@ async fn simulate_signed_transaction_move_authenticator_invalid_args() {
         result.effects.status().is_failure(),
         "MoveAuthenticator with bogus signature should fail during VM execution: {:?}",
         result.effects.status()
+    );
+
+    dump_wasm_fixture(
+        "move_auth_ed25519_invalid",
+        "MoveAuthenticator (authenticate_ed25519) with a bogus signature: \
+         the authenticator function rejects the bad signature and aborts inside the VM.",
+        chain_info,
+        &signed_data,
+        local.store().snapshot_cached(),
     );
 }
 

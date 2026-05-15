@@ -1780,8 +1780,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "90dbd31c98227229239363921e60fcf5e558e43ec69094d46fc4996f08d1d5bc"
 dependencies = [
  "bitcoin_hashes",
- "rand 0.7.3",
- "rand_core 0.5.1",
+ "rand 0.8.6",
+ "rand_core 0.6.4",
  "serde",
  "unicode-normalization",
 ]
@@ -2509,6 +2509,16 @@ dependencies = [
  "tracing",
  "tracing-core",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "console_error_panic_hook"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a06aeb73f470f66dcdbf7223caeebb85984942f22f1adb2a088cf9668146bbbc"
+dependencies = [
+ "cfg-if",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -6769,6 +6779,41 @@ dependencies = [
 ]
 
 [[package]]
+name = "iota-local-vm-wasm"
+version = "1.24.0-alpha"
+dependencies = [
+ "anyhow",
+ "base64 0.21.7",
+ "bcs",
+ "console_error_panic_hook",
+ "fastcrypto",
+ "getrandom 0.2.15",
+ "instant",
+ "iota-config",
+ "iota-execution",
+ "iota-framework",
+ "iota-protocol-config",
+ "iota-transaction-checks",
+ "iota-types",
+ "js-sys",
+ "move-binary-format",
+ "move-bytecode-utils",
+ "move-core-types",
+ "move-stdlib-natives",
+ "move-trace-format",
+ "move-vm-config",
+ "move-vm-runtime",
+ "move-vm-types",
+ "prometheus",
+ "serde",
+ "serde-wasm-bindgen",
+ "serde_json",
+ "thiserror 1.0.64",
+ "wasm-bindgen",
+ "web-sys",
+]
+
+[[package]]
 name = "iota-localnet"
 version = "1.24.0-alpha"
 dependencies = [
@@ -7240,7 +7285,7 @@ name = "iota-proto-build"
 version = "1.24.0-alpha"
 dependencies = [
  "bitflags 2.10.0",
- "heck 0.4.1",
+ "heck 0.5.0",
  "itertools 0.13.0",
  "petgraph 0.6.5",
  "prettyplease",
@@ -9155,6 +9200,7 @@ version = "0.0.3"
 dependencies = [
  "anyhow",
  "enum-compat-util",
+ "getrandom 0.2.15",
  "indexmap 2.11.0",
  "move-core-types",
  "move-proc-macros",
@@ -10004,7 +10050,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -11377,7 +11423,7 @@ version = "0.14.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "343d3bd7056eda839b03204e68deff7d1b13aba7af2b2fd16890697274262ee7"
 dependencies = [
- "heck 0.4.1",
+ "heck 0.5.0",
  "itertools 0.14.0",
  "log",
  "multimap",
@@ -11586,7 +11632,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash 2.1.2",
  "rustls",
- "socket2 0.5.7",
+ "socket2 0.6.3",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -12628,6 +12674,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde-wasm-bindgen"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8302e169f0eddcc139c70f139d19d6467353af16f9fce27e8c30158036a1e16b"
+dependencies = [
+ "js-sys",
+ "serde",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "serde_bytes"
 version = "0.11.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -13122,7 +13179,7 @@ version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1961e2ef424c1424204d3a5d6975f934f56b6d50ff5732382d84ebf460e147f7"
 dependencies = [
- "heck 0.4.1",
+ "heck 0.5.0",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -14691,7 +14748,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
  "cfg-if",
- "rand 0.7.3",
+ "rand 0.8.6",
  "static_assertions",
 ]
 

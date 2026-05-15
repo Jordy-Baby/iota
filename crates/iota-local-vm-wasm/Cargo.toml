@@ -1,0 +1,65 @@
+[package]
+name = "iota-local-vm-wasm"
+version.workspace = true
+authors = ["IOTA Foundation <info@iota.org>"]
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+description = "Local IOTA Move VM compiled to WebAssembly: simulate transactions and verify signatures (including MoveAuthenticator) locally in the browser, without contacting a node."
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false
+
+[dependencies]
+anyhow.workspace = true
+base64.workspace = true
+bcs.workspace = true
+fastcrypto.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+# Move VM stack (bottom-up wasm compilation)
+iota-config.workspace = true
+iota-execution.workspace = true
+iota-framework.workspace = true
+iota-protocol-config.workspace = true
+iota-transaction-checks.workspace = true
+iota-types.workspace = true
+move-binary-format = { workspace = true, features = ["wasm"] }
+move-bytecode-utils.workspace = true
+move-core-types.workspace = true
+move-stdlib-natives.workspace = true
+move-trace-format.workspace = true
+move-vm-config.workspace = true
+move-vm-runtime = { path = "../../external-crates/move/crates/move-vm-runtime" }
+move-vm-types = { path = "../../external-crates/move/crates/move-vm-types" }
+
+# Native-only: needed to construct real `LimitsMetrics` / `BytecodeVerifierMetrics`
+# (a stub variant is used on wasm32, see `executor.rs`). Keeps the crate
+# cargo-check-able on the host without dragging prometheus into the wasm bundle.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+prometheus.workspace = true
+
+# wasm32 needs the `js` feature of getrandom (enabled transitively for the
+# whole tree via feature unification). The `instant` crate (pulled in via
+# `parking_lot 0.11` → `move-vm-runtime`) needs its `wasm-bindgen` feature
+# on wasm32; without it the wasm module imports an unresolvable `env.now`.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
+instant = { version = "0.1", features = ["wasm-bindgen"] }
+wasm-bindgen = "0.2"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = ["console"] }
+serde-wasm-bindgen = "0.6"
+console_error_panic_hook = "0.1"
+
+[dev-dependencies]
+serde.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

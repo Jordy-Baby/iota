@@ -17,16 +17,21 @@ futures.workspace = true
 once_cell.workspace = true
 parking_lot.workspace = true
 rand.workspace = true
-reqwest.workspace = true
-snap.workspace = true
-tempfile.workspace = true
-tokio = { workspace = true, features = ["sync"] }
 tracing.workspace = true
 
 # internal dependencies
 iota-macros.workspace = true
-iota-metrics.workspace = true
 iota-types.workspace = true
+
+# Deps that don't compile to wasm32 (reqwest pulls TLS, tempfile uses fs,
+# iota-metrics pulls in axum/anemo). They're consumed by node-side helpers
+# in this crate that are themselves gated below.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+iota-metrics.workspace = true
+reqwest.workspace = true
+snap.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["sync"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros"] }

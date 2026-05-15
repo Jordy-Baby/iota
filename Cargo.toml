@@ -107,6 +107,7 @@ members = [
   "crates/iota-light-client",
   "crates/iota-local-exec",
   "crates/iota-local-executor",
+  "crates/iota-local-vm-wasm",
   "crates/iota-localnet",
   "crates/iota-macros",
   "crates/iota-mainnet-unlocks",
