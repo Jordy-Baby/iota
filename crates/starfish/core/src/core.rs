@@ -115,6 +115,10 @@ pub(crate) struct Core {
     /// Any subsequent block-creation attempt at that same round skips the
     /// strong-vote quorum check, regardless of the reason that triggered it.
     strong_vote_timed_out_round: Option<Round>,
+    /// First moment in the current clock round at which the ordinary (base
+    /// Starfish) propose condition was satisfied. Used to measure the extra
+    /// wait imposed by StarfishSpeed's strong-vote condition.
+    ordinary_propose_ready_at: Option<(Round, Instant)>,
 }
 
 #[derive(Eq, PartialEq, Copy, Clone, Debug)]
@@ -261,6 +265,7 @@ impl Core {
             encoder,
             commit_vote_monitor,
             strong_vote_timed_out_round: None,
+            ordinary_propose_ready_at: None,
         }
         .recover()
     }
@@ -825,6 +830,25 @@ impl Core {
         // block header's strong_vote field.
         let leader_header = self.leader_header(quorum_round);
 
+        // Record the first moment in this clock round at which the ordinary
+        // (base Starfish) propose condition was satisfied. Used to observe the
+        // extra wait imposed by the StarfishSpeed strong-vote condition.
+        if self.context.protocol_config.consensus_starfish_speed()
+            && !reason.is_forced()
+            && leader_header.is_some()
+            && Duration::from_millis(
+                self.context
+                    .clock
+                    .timestamp_utc_ms()
+                    .saturating_sub(self.last_proposed_timestamp_ms()),
+            ) >= self.context.parameters.min_block_delay
+            && self
+                .ordinary_propose_ready_at
+                .is_none_or(|(r, _)| r != clock_round)
+        {
+            self.ordinary_propose_ready_at = Some((clock_round, Instant::now()));
+        }
+
         // Create a new block either because we want to "forcefully" propose a block due
         // to a leader timeout, or because we are actually ready to produce the
         // block (leader exists and min delay has passed).
@@ -907,6 +931,40 @@ impl Core {
             .block_proposal_leader_wait_count
             .with_label_values(&[leader_authority])
             .inc();
+
+        // Extra wait between ordinary-condition readiness and actual proposal,
+        // attributable to the StarfishSpeed strong-vote condition.
+        if !reason.is_forced() && self.context.protocol_config.consensus_starfish_speed() {
+            if let Some((r, start)) = self.ordinary_propose_ready_at {
+                if r == clock_round {
+                    self.context
+                        .metrics
+                        .node_metrics
+                        .strong_vote_extra_wait_seconds
+                        .observe(start.elapsed().as_secs_f64());
+                }
+            }
+        }
+
+        // Strong-vote payload metrics: distribution of the `missing` set size,
+        // and per-leader counter when the payload is a blame (non-empty).
+        if let Some(sv) = strong_vote.as_ref() {
+            let node_metrics = &self.context.metrics.node_metrics;
+            node_metrics
+                .strong_vote_missing_authorities
+                .observe(sv.missing.len() as f64);
+            if !sv.missing.is_empty() {
+                let leader = &self
+                    .context
+                    .committee
+                    .authority(sv.leader_authority)
+                    .hostname;
+                node_metrics
+                    .strong_blames_emitted_for_leader
+                    .with_label_values(&[leader])
+                    .inc();
+            }
+        }
 
         self.context
             .metrics
@@ -1218,7 +1276,10 @@ impl Core {
                 sequenced_leaders.len(),
                 sequenced_leaders
                     .iter()
-                    .map(|(b, _, _)| b.reference().to_string())
+                    .map(|(b, m, _)| match m {
+                        Some(state) => format!("{}({state})", b.reference()),
+                        None => b.reference().to_string(),
+                    })
                     .join(",")
             );
 
@@ -1484,7 +1545,7 @@ impl Core {
 
     /// Builds the `StrongVote` payload for a block voting on `leader_header`:
     /// pins the leader's authority and records the set of authorities (the
-    /// leader itself and those it acknowledges) whose transaction data is not
+    /// leader itself and those it acknowledges) whose transactions are not
     /// locally available. An empty `missing` set means a strong vote; a
     /// non-empty set means strong blame.
     pub(crate) fn compute_strong_vote(
@@ -1494,12 +1555,12 @@ impl Core {
         let mut missing = AuthoritySet::new();
 
         let leader_ref = leader_header.reference();
-        if !dag_state.is_data_available(&leader_ref) {
+        if !dag_state.are_transactions_available(&leader_ref) {
             missing.insert(leader_ref.author);
         }
 
         for ack_ref in leader_header.acknowledgments() {
-            if !dag_state.is_data_available(ack_ref) {
+            if !dag_state.are_transactions_available(ack_ref) {
                 missing.insert(ack_ref.author);
             }
         }
@@ -1537,6 +1598,13 @@ impl Core {
             let Some(strong_vote) = block.strong_vote() else {
                 continue;
             };
+            let voter = &self.context.committee.authority(block.author()).hostname;
+            self.context
+                .metrics
+                .node_metrics
+                .strong_blames_received_from_voter
+                .with_label_values(&[voter])
+                .inc();
             dag_state.record_strong_vote_complaint(
                 block.author(),
                 leader_round,
