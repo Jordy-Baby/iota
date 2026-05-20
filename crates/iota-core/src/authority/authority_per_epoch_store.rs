@@ -3193,6 +3193,12 @@ impl AuthorityPerEpochStore {
         // after the consensus output is quarantined.
         let mut soft_lock_release_tx_digests = Vec::new();
         if enable_white_flag {
+            debug_assert!(
+                sequenced_randomness_transactions.is_empty(),
+                "white-flag categorization must keep all user transactions (including randomness) \
+                    in sequenced_transactions until validate_and_resolve_conflicts and the \
+                    subsequent partition; sequenced_randomness_transactions should be empty here"
+            );
             let (dropped, owned_object_locks, soft_lock_digests) =
                 post_consensus_validation::validate_and_resolve_conflicts(
                     authority_state,
