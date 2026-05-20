@@ -219,6 +219,13 @@ impl CheckpointTransaction {
                     .expect("created objects should show up in output objects")
             })
     }
+
+    pub fn execution_data(&self) -> ExecutionData {
+        ExecutionData {
+            transaction: self.transaction.clone(),
+            effects: self.effects.clone(),
+        }
+    }
 }
 
 impl BackingPackageStore for CheckpointData {

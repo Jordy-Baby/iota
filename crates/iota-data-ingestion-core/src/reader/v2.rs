@@ -126,7 +126,7 @@ impl RemoteStore {
                         no_sign_request: true,
                         ..Default::default()
                     },
-                    use_for_pruning_watermark: false,
+                    ingestion_url: None,
                 };
                 let historical = HistoricalReader::new(config)
                     .inspect_err(|e| error!("unable to instantiate historical reader: {e}"))?;
