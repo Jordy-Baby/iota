@@ -115,17 +115,27 @@ impl RemoteStore {
                 historical_url,
                 live_url,
             } => {
-                let config = ArchiveReaderConfig {
-                    download_concurrency: NonZeroUsize::new(batch_size)
-                        .expect("batch size must be greater than zero"),
-                    remote_store_config: ObjectStoreConfig {
+                let remote_store_config = if historical_url.starts_with("file://") {
+                    let dir = historical_url.trim_start_matches("file://");
+                    ObjectStoreConfig {
+                        object_store: Some(ObjectStoreType::File),
+                        directory: Some(PathBuf::from(dir)),
+                        ..Default::default()
+                    }
+                } else {
+                    ObjectStoreConfig {
                         object_store: Some(ObjectStoreType::S3),
                         object_store_connection_limit: 20,
                         aws_endpoint: Some(historical_url),
                         aws_virtual_hosted_style_request: true,
                         no_sign_request: true,
                         ..Default::default()
-                    },
+                    }
+                };
+                let config = ArchiveReaderConfig {
+                    download_concurrency: NonZeroUsize::new(batch_size)
+                        .expect("batch size must be greater than zero"),
+                    remote_store_config,
                     ingestion_url: None,
                 };
                 let historical = HistoricalReader::new(config)
