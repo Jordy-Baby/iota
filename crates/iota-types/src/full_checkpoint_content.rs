@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use tap::Pipe;
 
 use crate::{
-    base_types::ObjectRef,
+    base_types::{ExecutionData, ObjectRef},
     effects::{
         TransactionEffects, TransactionEffectsAPI, TransactionEffectsExt, TransactionEvents,
     },
