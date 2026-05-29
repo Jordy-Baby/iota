@@ -1391,7 +1391,7 @@ mod tests {
             clock,
         ));
 
-        let mem_store = Arc::new(MemStore::new(context.clone()));
+        let mem_store = Arc::new(MemStore::new());
         let dag_state = Arc::new(RwLock::new(DagState::new(
             context.clone(),
             mem_store.clone(),

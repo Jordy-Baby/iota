@@ -170,7 +170,7 @@ fn test_context_with_flag(enable_starfish_speed: bool) -> (Arc<Context>, Arc<RwL
     let ctx = Arc::new(ctx);
     let dag_state = Arc::new(RwLock::new(DagState::new(
         ctx.clone(),
-        Arc::new(MemStore::new(ctx.clone())),
+        Arc::new(MemStore::new()),
     )));
     (ctx, dag_state)
 }

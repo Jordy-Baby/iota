@@ -3992,7 +3992,7 @@ mod test {
             .protocol_config
             .set_consensus_fast_commit_sync_for_testing(consensus_fast_commit_sync);
         let context = Arc::new(context);
-        let store = Arc::new(MemStore::new(context.clone()));
+        let store = Arc::new(MemStore::new());
         let mut dag_state = DagState::new(context, store);
 
         let block = VerifiedBlock::new_for_test(TestBlockHeader::new(5, 1).build());
@@ -4644,7 +4644,7 @@ mod test {
             2,
             "this test assumes f+1 = 2 (n=4)"
         );
-        let store = Arc::new(MemStore::new(context.clone()));
+        let store = Arc::new(MemStore::new());
         let mut dag_state = DagState::new(context, store);
 
         let target = AuthorityIndex::from(2u8);
@@ -4675,7 +4675,7 @@ mod test {
     #[tokio::test]
     async fn adaptive_ack_same_voter_counts_once_per_leader_round() {
         let context = adaptive_ack_test_context(true);
-        let store = Arc::new(MemStore::new(context.clone()));
+        let store = Arc::new(MemStore::new());
         let mut dag_state = DagState::new(context, store);
 
         let target_x = AuthorityIndex::from(2u8);
@@ -4710,7 +4710,7 @@ mod test {
     #[tokio::test]
     async fn adaptive_ack_prunes_complaints_outside_window() {
         let context = adaptive_ack_test_context(true);
-        let store = Arc::new(MemStore::new(context.clone()));
+        let store = Arc::new(MemStore::new());
         let mut dag_state = DagState::new(context, store);
 
         let target = AuthorityIndex::from(2u8);
@@ -4761,7 +4761,7 @@ mod test {
             ctx.parameters
                 .enable_starfish_speed_adaptive_acknowledgments = adaptive_acks;
             let context = Arc::new(ctx);
-            let store = Arc::new(MemStore::new(context.clone()));
+            let store = Arc::new(MemStore::new());
             let mut dag_state = DagState::new(context, store);
 
             let target = AuthorityIndex::from(2u8);
@@ -4797,7 +4797,7 @@ mod test {
     #[tokio::test]
     async fn adaptive_ack_filter_drops_blamed_authority_refs() {
         let context = adaptive_ack_test_context(true);
-        let store = Arc::new(MemStore::new(context.clone()));
+        let store = Arc::new(MemStore::new());
         let mut dag_state = DagState::new(context, store);
 
         // Pending acknowledgments: one ref per authority.
@@ -4839,7 +4839,7 @@ mod test {
         let (mut ctx, _) = Context::new_for_test(4);
         ctx.protocol_config.set_gc_depth_for_testing(20);
         let context = Arc::new(ctx);
-        let store = Arc::new(MemStore::new(context.clone()));
+        let store = Arc::new(MemStore::new());
         let mut dag_state = DagState::new(context, store);
 
         // Advance threshold_clock to round 5 — quorum (3 of 4) at round 4.
