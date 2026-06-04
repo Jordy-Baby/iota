@@ -22,8 +22,9 @@ use base64::Engine;
 use fastcrypto::traits::ToFromBytes;
 use iota_protocol_config::{Chain, ProtocolVersion};
 use iota_types::{
+    base_types::ObjectRef,
     effects::TransactionEffectsAPI,
-    object::Object,
+    object::{Object, Owner},
     signature::GenericSignature,
     transaction::{SenderSignedData, TransactionData},
 };
@@ -197,8 +198,117 @@ pub struct SimulateRequest {
     pub signatures: Vec<String>,
 }
 
-/// Output of [`simulate`]: the run's status and a flattened gas/effects
-/// summary.
+/// The owner of an object, in a JS-friendly tagged form.
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum OwnerInfo {
+    /// Exclusively owned by an address.
+    Address {
+        /// Owner address, hex `0x…`.
+        address: String,
+    },
+    /// Owned by another object (a dynamic field or wrapped object).
+    Object {
+        /// Parent object ID, hex `0x…`.
+        object_id: String,
+    },
+    /// Shared and usable by any address.
+    Shared {
+        /// Version at which the object became shared.
+        initial_shared_version: u64,
+    },
+    /// Immutable; ownership doesn't apply.
+    Immutable,
+    /// An owner kind this build doesn't recognise.
+    Unknown,
+}
+
+impl From<&Owner> for OwnerInfo {
+    fn from(owner: &Owner) -> Self {
+        match owner {
+            Owner::Address(address) => OwnerInfo::Address {
+                address: address.to_string(),
+            },
+            Owner::Object(object_id) => OwnerInfo::Object {
+                object_id: object_id.to_string(),
+            },
+            Owner::Shared(version) => OwnerInfo::Shared {
+                initial_shared_version: version.as_u64(),
+            },
+            Owner::Immutable => OwnerInfo::Immutable,
+            _ => OwnerInfo::Unknown,
+        }
+    }
+}
+
+/// One object created or mutated by the transaction.
+#[derive(Serialize, Deserialize)]
+pub struct ChangedObject {
+    /// Object ID, hex `0x…`.
+    pub object_id: String,
+    /// Version (sequence number) after the change.
+    pub version: u64,
+    /// Object digest, base58.
+    pub digest: String,
+    /// The object's owner after the change.
+    pub owner: OwnerInfo,
+}
+
+/// One object deleted (or wrapped) by the transaction.
+#[derive(Serialize, Deserialize)]
+pub struct DeletedObject {
+    /// Object ID, hex `0x…`.
+    pub object_id: String,
+    /// Version at which the object was deleted.
+    pub version: u64,
+    /// Object digest, base58.
+    pub digest: String,
+}
+
+/// One Move event emitted by the transaction.
+#[derive(Serialize, Deserialize)]
+pub struct EventOut {
+    /// Package that emitted the event, hex `0x…`.
+    pub package_id: String,
+    /// Module inside that package.
+    pub module: String,
+    /// Event struct name.
+    pub name: String,
+    /// Fully-qualified event type, e.g. `0x2::coin::CoinEvent`.
+    pub type_tag: String,
+    /// Decoded event payload, when decoding succeeded.
+    pub value: Option<serde_json::Value>,
+    /// Decode error, when the event couldn't be annotated against the store.
+    pub decode_error: Option<String>,
+}
+
+/// One BCS value produced by a PTB command (a dev-inspect return value or a
+/// mutably-borrowed argument's output), with its type and decoded payload.
+#[derive(Serialize, Deserialize)]
+pub struct MoveCallValue {
+    /// The value's Move type, e.g. `u64` or `0x2::coin::Coin<0x2::iota::IOTA>`.
+    pub type_tag: String,
+    /// Base-64 of the value's BCS bytes (the raw value, always present).
+    pub bcs: String,
+    /// Decoded value, when the type layout could be resolved from the store.
+    pub value: Option<serde_json::Value>,
+    /// Decode error, when the value couldn't be decoded.
+    pub decode_error: Option<String>,
+}
+
+/// Outputs of one PTB command, surfaced for dev-inspect runs. Empty for
+/// commands that neither return a value nor mutate a borrowed argument.
+#[derive(Serialize, Deserialize)]
+pub struct CommandResultOut {
+    /// Values the command returned.
+    pub return_values: Vec<MoveCallValue>,
+    /// Values of the arguments the command mutably borrowed.
+    pub mutable_reference_outputs: Vec<MoveCallValue>,
+}
+
+/// Output of [`simulate`]: the run's status, a flattened gas summary, the
+/// objects and events the transaction produced, and per-command dev-inspect
+/// results.
 #[derive(Serialize, Deserialize)]
 pub struct SimulateResult {
     /// Whether the transaction executed successfully.
@@ -215,14 +325,17 @@ pub struct SimulateResult {
     pub storage_rebate: u64,
     /// Non-refundable storage fee.
     pub non_refundable_storage_fee: u64,
-    /// Number of objects mutated by the transaction.
-    pub mutated_count: usize,
-    /// Number of objects created by the transaction.
-    pub created_count: usize,
-    /// Number of objects deleted by the transaction.
-    pub deleted_count: usize,
-    /// Number of events emitted.
-    pub event_count: usize,
+    /// Objects mutated by the transaction.
+    pub mutated: Vec<ChangedObject>,
+    /// Objects created by the transaction.
+    pub created: Vec<ChangedObject>,
+    /// Objects deleted by the transaction.
+    pub deleted: Vec<DeletedObject>,
+    /// Events emitted by the transaction, decoded against the loaded objects.
+    pub events: Vec<EventOut>,
+    /// Per-PTB-command dev-inspect results (return values and mutable-reference
+    /// outputs). Populated in dev-inspect; empty otherwise.
+    pub command_results: Vec<CommandResultOut>,
     /// Debug rendering of the execution error, when the run failed.
     pub error: Option<String>,
     /// `true` when signatures were supplied and verification (incl. any
@@ -285,9 +398,86 @@ pub fn simulate(req: JsValue) -> Result<JsValue, JsError> {
     let status = result.effects.status();
     let success = status.is_success();
     let gas = &result.gas_summary;
-    let event_count = result.events.as_ref().map(|e| e.0.len()).unwrap_or(0);
     let signature_verified =
         signed && matches!(result.signature_status, crate::SignatureStatus::Verified);
+
+    fn changed((obj, owner): (ObjectRef, Owner)) -> ChangedObject {
+        ChangedObject {
+            object_id: obj.object_id().to_string(),
+            version: obj.version().as_u64(),
+            digest: obj.digest().to_string(),
+            owner: OwnerInfo::from(&owner),
+        }
+    }
+    let mutated: Vec<ChangedObject> = result.effects.mutated().into_iter().map(changed).collect();
+    let created: Vec<ChangedObject> = result.effects.created().into_iter().map(changed).collect();
+    let deleted: Vec<DeletedObject> = result
+        .effects
+        .deleted()
+        .into_iter()
+        .map(|obj| DeletedObject {
+            object_id: obj.object_id().to_string(),
+            version: obj.version().as_u64(),
+            digest: obj.digest().to_string(),
+        })
+        .collect();
+
+    // Decode each event against the loaded objects; keep going on a per-event
+    // failure so one undecodable event doesn't drop the rest.
+    let events: Vec<EventOut> = match &result.events {
+        Some(evs) => vm
+            .decode_events(evs)
+            .into_iter()
+            .map(|dec| match dec {
+                Ok(d) => EventOut {
+                    package_id: d.package_id.to_string(),
+                    module: d.module.to_string(),
+                    name: d.name.to_string(),
+                    type_tag: d.type_tag.to_string(),
+                    value: serde_json::to_value(&d.value).ok(),
+                    decode_error: None,
+                },
+                Err(e) => EventOut {
+                    package_id: String::new(),
+                    module: String::new(),
+                    name: String::new(),
+                    type_tag: String::new(),
+                    value: None,
+                    decode_error: Some(e.to_string()),
+                },
+            })
+            .collect(),
+        None => Vec::new(),
+    };
+
+    // Decode the per-command dev-inspect values (return values and mutable
+    // reference outputs), each a raw `(bytes, type)` pair, against the store.
+    let decode_call_value = |bytes: &[u8], type_tag: &iota_sdk_types::TypeTag| {
+        let (value, decode_error) = match vm.decode_value(bytes, type_tag) {
+            Ok(v) => (serde_json::to_value(&v).ok(), None),
+            Err(e) => (None, Some(e.to_string())),
+        };
+        MoveCallValue {
+            type_tag: type_tag.to_string(),
+            bcs: base64::engine::general_purpose::STANDARD.encode(bytes),
+            value,
+            decode_error,
+        }
+    };
+    let command_results: Vec<CommandResultOut> = result
+        .command_results
+        .iter()
+        .map(|(mut_refs, returns)| CommandResultOut {
+            return_values: returns
+                .iter()
+                .map(|(bytes, tt)| decode_call_value(bytes, tt))
+                .collect(),
+            mutable_reference_outputs: mut_refs
+                .iter()
+                .map(|(_arg, bytes, tt)| decode_call_value(bytes, tt))
+                .collect(),
+        })
+        .collect();
 
     let out = SimulateResult {
         success,
@@ -297,12 +487,20 @@ pub fn simulate(req: JsValue) -> Result<JsValue, JsError> {
         storage_cost: gas.storage_cost,
         storage_rebate: gas.storage_rebate,
         non_refundable_storage_fee: gas.non_refundable_storage_fee,
-        mutated_count: result.effects.mutated().len(),
-        created_count: result.effects.created().len(),
-        deleted_count: result.effects.deleted().len(),
-        event_count,
+        mutated,
+        created,
+        deleted,
+        events,
+        command_results,
         error: status.error().map(|e| format!("{e:?}")),
         signature_verified,
     };
-    serde_wasm_bindgen::to_value(&out).map_err(|e| JsError::new(&e.to_string()))
+    // Round-trip through a JSON string rather than `serde_wasm_bindgen`: the
+    // decoded event payloads are `serde_json::Value`s, and `serde_json` renders
+    // its own maps and (arbitrary-precision) numbers faithfully, whereas
+    // `serde_wasm_bindgen` would turn maps into JS `Map`s (stringifying to
+    // `{}`) and leak serde_json's number token. `JSON.parse` then yields a
+    // plain JS object.
+    let json = serde_json::to_string(&out).map_err(|e| JsError::new(&e.to_string()))?;
+    js_sys::JSON::parse(&json).map_err(|e| JsError::new(&format!("{e:?}")))
 }

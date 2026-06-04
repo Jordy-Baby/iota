@@ -44,6 +44,7 @@
     <div>
       <button id="valid">Valid: free-access authenticator</button>
       <button id="invalid">Invalid: bad ed25519 signature</button>
+      <button id="stake">Staking: emits events</button>
     </div>
 
     <h2 id="status"></h2>
@@ -60,6 +61,7 @@
       const FIXTURES = {
         valid: "../../tests/fixtures/move_auth_free_access_valid.json",
         invalid: "../../tests/fixtures/move_auth_ed25519_invalid.json",
+        stake: "../../tests/fixtures/stake.json",
       };
 
       async function run(which) {
@@ -88,6 +90,7 @@
       outputEl.textContent = "Ready. Pick an example above.";
       document.getElementById("valid").addEventListener("click", () => run("valid"));
       document.getElementById("invalid").addEventListener("click", () => run("invalid"));
+      document.getElementById("stake").addEventListener("click", () => run("stake"));
     </script>
   </body>
 </html>
