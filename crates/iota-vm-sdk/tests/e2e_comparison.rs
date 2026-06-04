@@ -4,9 +4,6 @@
 //! End-to-end comparison: run a staking transaction through the local
 //! [`LocalVm`] (objects pre-fetched over gRPC into a [`GrpcStore`]) and against
 //! a live [`test_cluster::TestCluster`]'s own dry-run, then assert both agree.
-//!
-//! Requires the `grpc` feature (for [`GrpcStore`]); the `[[test]]` target is
-//! gated on it in `Cargo.toml`.
 
 use iota_json_rpc_types::{IotaExecutionStatus, IotaTransactionBlockEffectsAPI};
 use iota_test_transaction_builder::TestTransactionBuilder;
