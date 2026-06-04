@@ -12,7 +12,7 @@ rejected signature, and a staking transaction that emits events.
    `wasm-bindgen` CLI matching the crate's `wasm-bindgen` version (run
    `cargo tree -p iota-vm-sdk -i wasm-bindgen` to check it):
 
-      ```sh
+   ```sh
    rustup target add wasm32-unknown-unknown
    cargo install wasm-bindgen-cli --version <ver>   # e.g. 0.2.122
    ./build.sh
@@ -23,8 +23,8 @@ rejected signature, and a staking transaction that emits events.
    directory):
 
    ```sh
-      cd ../..            # crates/iota-vm-sdk
-      python3 -m http.server 8000
+   cd ../..            # crates/iota-vm-sdk
+   python3 -m http.server 8000
    ```
 
    Then open <http://localhost:8000/examples/wasm/> and pick an example.
