@@ -87,7 +87,11 @@ path = "tests/e2e_comparison.rs"
 required-features = ["grpc"]
 
 [package.metadata.cargo-udeps.ignore]
-development = ["iota-json-rpc-types", "iota-test-transaction-builder", "test-cluster"]
+development = [
+  "iota-json-rpc-types",
+  "iota-test-transaction-builder",
+  "test-cluster",
+]
 
 [lints]
 workspace = true
