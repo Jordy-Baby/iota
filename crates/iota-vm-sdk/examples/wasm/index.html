@@ -1,0 +1,93 @@
+<!doctype html>
+<!-- Copyright (c) 2026 IOTA Stiftung -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>iota-vm-sdk wasm example</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        max-width: 60rem;
+        margin: 2rem auto;
+        padding: 0 1rem;
+      }
+      button {
+        margin: 0.25rem 0.5rem 0.25rem 0;
+        padding: 0.5rem 0.9rem;
+        cursor: pointer;
+      }
+      pre {
+        background: #1113;
+        padding: 1rem;
+        border-radius: 6px;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .ok {
+        color: #1a7f37;
+      }
+      .bad {
+        color: #cf222e;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>iota-vm-sdk in the browser</h1>
+    <p>
+      Runs an example transaction through the local Move VM compiled to wasm and
+      shows the result. Each example reuses a committed test fixture (a
+      transaction plus the objects it touches).
+    </p>
+
+    <div>
+      <button id="valid">Valid: free-access authenticator</button>
+      <button id="invalid">Invalid: bad ed25519 signature</button>
+    </div>
+
+    <h2 id="status"></h2>
+    <pre id="output">Loading wasm…</pre>
+
+    <script type="module">
+      import init, { simulate } from "./pkg/iota_vm_sdk.js";
+
+      const statusEl = document.getElementById("status");
+      const outputEl = document.getElementById("output");
+
+      // Fixtures live in the crate's test suite; serve the crate root so this
+      // relative path resolves (see README.md).
+      const FIXTURES = {
+        valid: "../../tests/fixtures/move_auth_free_access_valid.json",
+        invalid: "../../tests/fixtures/move_auth_ed25519_invalid.json",
+      };
+
+      async function run(which) {
+        statusEl.textContent = "";
+        outputEl.textContent = "Running…";
+        try {
+          const fixture = await (await fetch(FIXTURES[which])).json();
+          // The fixture already carries every SimulateRequest field; run in
+          // dev-inspect (relaxed checks) since the fixtures carry no real gas.
+          const result = simulate({ ...fixture, strict: false });
+          const verdict = result.success ? "succeeded" : "failed";
+          statusEl.textContent = `Execution ${verdict}` +
+            (fixture.signatures?.length
+              ? ` · signature ${result.signature_verified ? "verified" : "rejected"}`
+              : "");
+          statusEl.className = result.success ? "ok" : "bad";
+          outputEl.textContent = JSON.stringify(result, null, 2);
+        } catch (e) {
+          statusEl.textContent = "Error";
+          statusEl.className = "bad";
+          outputEl.textContent = String(e);
+        }
+      }
+
+      await init();
+      outputEl.textContent = "Ready. Pick an example above.";
+      document.getElementById("valid").addEventListener("click", () => run("valid"));
+      document.getElementById("invalid").addEventListener("click", () => run("invalid"));
+    </script>
+  </body>
+</html>
