@@ -35,11 +35,6 @@ serde_json.workspace = true
 thiserror.workspace = true
 
 # internal dependencies
-# Move VM stack — these compile to wasm32 (bottom-up).
-# `tracing` wires up the Move VM gas profiler + instruction trace builder. This
-# crate's purpose is local debugging/introspection, so it is always enabled.
-# Move `debug::print` capture is controlled at executor construction via the
-# `silent` flag (see `executor.rs`), not a cargo feature.
 iota-config.workspace = true
 iota-execution = { workspace = true, features = ["tracing"] }
 iota-framework.workspace = true
@@ -50,10 +45,6 @@ iota-types.workspace = true
 move-core-types.workspace = true
 move-trace-format.workspace = true
 
-# Native-only dependencies. Heavy crates and the networked stores never reach
-# the wasm bundle: prometheus (real metrics; a stub is used on wasm32) and
-# tracing stay host-side. The networked-store features are additionally
-# feature-gated.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 # external dependencies
 prometheus.workspace = true
@@ -63,16 +54,10 @@ tonic = { workspace = true, optional = true }
 tracing.workspace = true
 
 # internal dependencies
-# GraphQL store backend (feature = "graphql").
 iota-graphql-rpc-client = { workspace = true, optional = true }
-# gRPC store backend (feature = "grpc"). `iota-grpc-client` is the
-# `iota-sdk-grpc-client` git dependency already pinned in the workspace.
 iota-grpc-client = { workspace = true, optional = true }
 iota-grpc-types = { workspace = true, optional = true }
 
-# wasm32 target needs the `js` feature of getrandom and the `wasm-bindgen`
-# feature of `instant` (pulled in via `move-vm-runtime`); without them the wasm
-# module imports an unresolvable `env.now`.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = { version = "0.1", optional = true }
 getrandom.workspace = true
@@ -83,10 +68,6 @@ wasm-bindgen = { version = "0.2", optional = true }
 web-sys = { version = "0.3", optional = true, features = ["console"] }
 
 [dev-dependencies]
-# The integration tests and example replay committed fixtures / hard-coded BCS
-# blobs against the public API; they need no node, cluster, or live keystore.
-# Everything else they use (bcs, base64, fastcrypto, serde, serde_json,
-# iota-types, iota-sdk-types) is already a normal dependency.
 anyhow.workspace = true
 
 [[example]]

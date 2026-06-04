@@ -37,11 +37,15 @@ use crate::{
     store::InMemoryStore,
 };
 
+/// Module entry point: install a panic hook that surfaces Rust panics in the
+/// browser console. Runs automatically when the wasm module is instantiated.
 #[wasm_bindgen(start)]
 pub fn init() {
     console_error_panic_hook::set_once();
 }
 
+/// Decode a standard-base-64 string into raw bytes, mapping errors to a
+/// JS exception.
 fn b64_decode(s: &str) -> Result<Vec<u8>, JsError> {
     base64::engine::general_purpose::STANDARD
         .decode(s)
@@ -69,13 +73,18 @@ fn err_to_js(e: VmSdkError) -> JsError {
 /// Result of decoding a transaction: the object IDs the JS side must fetch.
 #[derive(Serialize, Deserialize)]
 pub struct DecodedTransactionJs {
+    /// Transaction sender address, hex-encoded.
     pub sender: String,
+    /// Gas budget declared by the transaction.
     pub gas_budget: u64,
+    /// Gas price declared by the transaction.
     pub gas_price: u64,
     /// All distinct object IDs the transaction references, hex-encoded.
     pub required_objects: Vec<String>,
 }
 
+/// Decode a base-64 BCS [`TransactionData`] into the sender, gas parameters,
+/// and the set of object IDs the JS side must fetch before [`simulate`].
 #[wasm_bindgen]
 pub fn decode_transaction(tx_b64: &str) -> Result<JsValue, JsError> {
     let bytes = b64_decode(tx_b64)?;
@@ -117,11 +126,18 @@ pub fn derive_field_id(
 /// `MoveAuthenticator` signature. `null` for non-`MoveAuthenticator` blobs.
 #[derive(Serialize, Deserialize)]
 pub struct MoveAuthenticatorObjects {
+    /// Hex-encoded IDs of the authenticator's own input objects.
     pub input_object_ids: Vec<String>,
+    /// Hex-encoded ID of the account object being authenticated.
     pub account_object_id: String,
+    /// Hex-encoded ID of the dynamic field holding the authenticator function
+    /// reference.
     pub auth_function_field_id: String,
 }
 
+/// Inspect a base-64 signature blob and, when it is a `MoveAuthenticator`,
+/// return the auth-related object IDs the JS side must fetch. Returns `null`
+/// for any other signature scheme.
 #[wasm_bindgen]
 pub fn decode_move_authenticator_objects(sig_b64: &str) -> Result<JsValue, JsError> {
     let bytes = b64_decode(sig_b64)?;
@@ -152,16 +168,25 @@ pub fn decode_move_authenticator_objects(sig_b64: &str) -> Result<JsValue, JsErr
 /// A BCS-encoded `Object`, base-64 encoded.
 #[derive(Serialize, Deserialize)]
 pub struct BcsObject {
+    /// Base-64 of the object's BCS bytes.
     pub bcs_b64: String,
 }
 
+/// Input to [`simulate`]: the transaction, the chain parameters, the objects it
+/// touches, and optional signatures.
 #[derive(Serialize, Deserialize)]
 pub struct SimulateRequest {
+    /// Base-64 BCS [`TransactionData`] to run.
     pub tx_b64: String,
+    /// Protocol version to configure the VM for.
     pub protocol_version: u64,
+    /// Reference gas price for the epoch.
     pub reference_gas_price: u64,
+    /// Current epoch ID.
     pub epoch_id: u64,
+    /// Current epoch start timestamp, in milliseconds.
     pub epoch_timestamp_ms: u64,
+    /// The objects the transaction reads/writes, pre-fetched by the JS side.
     pub objects: Vec<BcsObject>,
     /// When true, run with full sign-time checks (dry-run); otherwise
     /// dev-inspect.
@@ -172,25 +197,42 @@ pub struct SimulateRequest {
     pub signatures: Vec<String>,
 }
 
+/// Output of [`simulate`]: the run's status and a flattened gas/effects
+/// summary.
 #[derive(Serialize, Deserialize)]
 pub struct SimulateResult {
+    /// Whether the transaction executed successfully.
     pub success: bool,
+    /// Debug rendering of the execution status.
     pub status: String,
+    /// Total gas consumed (net of rebate).
     pub gas_used: u64,
+    /// Computation portion of the gas cost.
     pub computation_cost: u64,
+    /// Storage portion of the gas cost.
     pub storage_cost: u64,
+    /// Storage rebate credited back.
     pub storage_rebate: u64,
+    /// Non-refundable storage fee.
     pub non_refundable_storage_fee: u64,
+    /// Number of objects mutated by the transaction.
     pub mutated_count: usize,
+    /// Number of objects created by the transaction.
     pub created_count: usize,
+    /// Number of objects deleted by the transaction.
     pub deleted_count: usize,
+    /// Number of events emitted.
     pub event_count: usize,
+    /// Debug rendering of the execution error, when the run failed.
     pub error: Option<String>,
     /// `true` when signatures were supplied and verification (incl. any
     /// `MoveAuthenticator` function) succeeded.
     pub signature_verified: bool,
 }
 
+/// Run a [`SimulateRequest`] through the local Move VM and return a
+/// [`SimulateResult`]. Loads the supplied objects into an in-memory store,
+/// verifies any signatures, and executes in dry-run or dev-inspect mode.
 #[wasm_bindgen]
 pub fn simulate(req: JsValue) -> Result<JsValue, JsError> {
     let req: SimulateRequest =
