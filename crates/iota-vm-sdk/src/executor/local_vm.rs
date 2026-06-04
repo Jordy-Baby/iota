@@ -203,10 +203,10 @@ impl LocalVm {
 
     /// Decode a single BCS-encoded value of the given
     /// [`TypeTag`](iota_sdk_types::TypeTag) into an annotated
-    /// [`MoveValue`](move_core_types::annotated_value::MoveValue), resolving any
-    /// struct layouts from the packages in the store. Used to turn dev-inspect
-    /// return values and mutable reference outputs (raw `(bytes, type)` pairs)
-    /// into readable values.
+    /// [`MoveValue`](move_core_types::annotated_value::MoveValue), resolving
+    /// any struct layouts from the packages in the store. Used to turn
+    /// dev-inspect return values and mutable reference outputs (raw
+    /// `(bytes, type)` pairs) into readable values.
     pub fn decode_value(
         &self,
         bytes: &[u8],
