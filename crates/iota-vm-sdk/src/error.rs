@@ -6,14 +6,10 @@
 //! Every fallible entry point returns [`VmSdkError`]. The variants partition
 //! the failure space into the four phases of the SDK — decode, validate,
 //! verify-signature, execute — plus a catch-all for Move VM faults and missing
-//! objects. This lets the wasm surface map each variant to a distinct JS
-//! exception without string-matching, and lets native callers branch on the
-//! failure phase.
+//! objects, so callers can branch on the failure phase.
 //!
 //! The sub-error types ([`DecodeError`], [`ValidationError`], …) wrap the
-//! underlying cause as a string. They are intentionally simple — the SDK does
-//! not re-export the heavyweight error enums from `iota_types`, so callers do
-//! not take a transitive dependency on internal node error shapes.
+//! underlying cause as a string.
 
 use iota_sdk_types::{ObjectId, Version};
 

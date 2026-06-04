@@ -105,7 +105,6 @@ pub(super) fn prepare_transaction(
         None
     };
 
-    // Deny-list check.
     let deny_config = iota_config::transaction_deny_config::TransactionDenyConfig::default();
     let receiving_object_refs = transaction.receiving_objects();
     iota_transaction_checks::deny::check_transaction_for_signing(

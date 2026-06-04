@@ -225,11 +225,9 @@ impl LocalVm {
     /// Apply created/mutated/deleted/wrapped changes back into the store so a
     /// subsequent run sees them.
     fn apply_effects(&mut self, sim: &SimulateTransactionResult) {
-        // Write created/mutated/unwrapped objects.
         for obj in sim.output_objects.values() {
             self.store.insert(obj.clone());
         }
-        // Drop deleted and wrapped objects.
         for objref in sim.effects.deleted() {
             self.store.remove(&objref.object_id);
         }

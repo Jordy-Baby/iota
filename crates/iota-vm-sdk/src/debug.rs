@@ -6,8 +6,7 @@
 //!
 //! [`DebugConfig`] is the user-facing input surface — independently toggle
 //! `debug::print` capture, the Move VM gas profiler, and instruction tracing.
-//! It is an input config, so it is **not** `#[non_exhaustive]`. The captured
-//! [`DebugArtifacts`] are output, so they are.
+//! A run returns the matching [`DebugArtifacts`].
 
 use std::path::PathBuf;
 
@@ -20,10 +19,8 @@ use move_trace_format::format::MoveTrace;
 #[derive(Debug, Default, Clone)]
 pub struct DebugConfig {
     /// Capture Move `debug::print` output into [`DebugArtifacts::prints`].
-    ///
-    /// Flips the `silent` flag passed to the Move executor and installs an
-    /// in-memory sink. When `false`, prints go to stdout (the executor's
-    /// default) and [`DebugArtifacts::prints`] is empty.
+    /// When `false`, prints go to stdout and [`DebugArtifacts::prints`] is
+    /// empty.
     pub capture_debug_prints: bool,
     /// Enable the Move VM gas profiler and choose where the Speedscope JSON
     /// ends up.

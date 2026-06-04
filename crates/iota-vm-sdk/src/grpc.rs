@@ -31,13 +31,6 @@ pub struct GrpcStore {
 }
 
 impl GrpcStore {
-    /// Connect to a gRPC endpoint (by URL) and create an empty,
-    /// framework-seeded store.
-    pub fn connect(url: &str) -> Result<Self, VmSdkError> {
-        let client = Client::new(url).map_err(|e| ValidationError::new("connect gRPC", e))?;
-        Ok(Self::new(client))
-    }
-
     /// Wrap an existing client. The store is seeded with the built-in
     /// framework packages so Move calls resolve.
     pub fn new(client: Client) -> Self {
@@ -45,6 +38,13 @@ impl GrpcStore {
             inner: InMemoryStore::with_framework(),
             client,
         }
+    }
+
+    /// Connect to a gRPC endpoint (by URL) and create an empty,
+    /// framework-seeded store.
+    pub fn connect(url: &str) -> Result<Self, VmSdkError> {
+        let client = Client::new(url).map_err(|e| ValidationError::new("connect gRPC", e))?;
+        Ok(Self::new(client))
     }
 
     /// Fetch the chain parameters a [`LocalVm`](crate::LocalVm) needs.

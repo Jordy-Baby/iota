@@ -17,9 +17,7 @@ use move_core_types::annotated_value::MoveValue;
 
 use crate::debug::{DebugArtifacts, DebugConfig};
 
-/// The chain parameters a [`LocalVm`](super::LocalVm) needs, replacing the four
-/// loose scalar arguments the older executors took. This is an input config, so
-/// it is **not** `#[non_exhaustive]`.
+/// The chain parameters a [`LocalVm`](super::LocalVm) needs.
 #[derive(Debug, Clone)]
 pub struct ChainContext {
     pub protocol_version: ProtocolVersion,
@@ -60,7 +58,6 @@ pub enum SignatureStatus {
 }
 
 /// Options for a single run: the [`ExecutionMode`] plus a [`DebugConfig`].
-/// Input config — **not** `#[non_exhaustive]`.
 #[derive(Debug, Clone, Default)]
 pub struct ExecuteOptions {
     pub mode: ExecutionMode,
@@ -102,8 +99,7 @@ impl ExecuteOptions {
 
 /// The full result of a run: effects, events, per-command results, the input
 /// and output object sets, gas accounting, signature status, whether the run
-/// was committed to the store, and any captured debug artifacts. Output type —
-/// `#[non_exhaustive]`.
+/// was committed to the store, and any captured debug artifacts.
 #[non_exhaustive]
 pub struct ExecutionResult {
     pub effects: TransactionEffects,
@@ -123,8 +119,7 @@ pub struct ExecutionResult {
     pub debug: Option<DebugArtifacts>,
 }
 
-/// Convenience summary of a run's gas ledger. Output type —
-/// `#[non_exhaustive]`.
+/// Convenience summary of a run's gas ledger.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct GasEstimate {
@@ -159,8 +154,7 @@ impl GasEstimate {
     }
 }
 
-/// One decoded Move event with every field named and typed. Output type —
-/// `#[non_exhaustive]`.
+/// One decoded Move event with every field named and typed.
 #[derive(Debug)]
 #[non_exhaustive]
 pub struct DecodedEvent {

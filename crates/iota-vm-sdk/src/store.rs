@@ -4,11 +4,7 @@
 //! Object storage surface for the local VM.
 //!
 //! The public [`Store`] trait is a four-method surface —
-//! `get_object` / `get_child_object` / `insert` / `remove`. It
-//! deliberately does not expose the three internal storage traits the Move
-//! execution engine requires ([`BackingPackageStore`], [`ChildObjectResolver`],
-//! [`ObjectStore`]); instead [`StoreBackend`] adapts any `&dyn Store` into a
-//! [`BackingStore`] for the engine.
+//! `get_object` / `get_child_object` / `insert` / `remove`.
 //!
 //! [`InMemoryStore`] is the default, fully-offline implementation. The
 //! networked stores ([`crate::grpc`] / [`crate::graphql`]) pre-fetch into an
