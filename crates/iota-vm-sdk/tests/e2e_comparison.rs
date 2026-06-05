@@ -5,28 +5,19 @@
 //! [`LocalVm`] (objects pre-fetched over gRPC into a [`GrpcStore`]) and against
 //! a live [`test_cluster::TestCluster`]'s own dry-run, then assert both agree.
 
+use std::collections::BTreeSet;
+
 use iota_json_rpc_types::{IotaExecutionStatus, IotaTransactionBlockEffectsAPI};
 use iota_test_transaction_builder::TestTransactionBuilder;
-use iota_types::{effects::TransactionEffectsAPI, transaction::TransactionData};
+use iota_types::{
+    base_types::ObjectRef, effects::TransactionEffectsAPI, object::Owner,
+    transaction::TransactionData,
+};
 use iota_vm_sdk::{ExecuteOptions, LocalVm, ObjectId, grpc::GrpcStore};
 use test_cluster::TestClusterBuilder;
 
-/// The parts of a simulation result that should agree regardless of which
-/// backend produced them. Gas is intentionally excluded: the local run uses
-/// dev-inspect (relaxed checks) against objects pre-fetched at a possibly
-/// earlier version than the node's dry-run sees, so the two ledgers can differ
-/// by a rebate while the object/event changes stay identical.
-#[derive(Debug, PartialEq, Eq)]
-struct SimulationSummary {
-    success: bool,
-    created_count: usize,
-    mutated_count: usize,
-    deleted_count: usize,
-    events_count: usize,
-}
-
 /// Build a staking transaction, simulate it with both the node's dry-run and
-/// the local VM, and assert the two produce the same effects summary.
+/// the local VM, and assert the two produce the same object changes.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn compare_local_vm_staking_against_test_cluster() {
     let test_cluster = TestClusterBuilder::new()
@@ -75,14 +66,10 @@ async fn compare_local_vm_staking_against_test_cluster() {
         .dry_run_transaction_block(tx_data.clone())
         .await
         .expect("node dry-run should succeed");
-    let node_summary = SimulationSummary {
-        success: matches!(dry_run.effects.status(), IotaExecutionStatus::Success),
-        created_count: dry_run.effects.created().len(),
-        mutated_count: dry_run.effects.mutated().len(),
-        deleted_count: dry_run.effects.deleted().len(),
-        events_count: dry_run.events.data.len(),
-    };
-    assert!(node_summary.success, "node dry-run staking should succeed");
+    assert!(
+        matches!(dry_run.effects.status(), IotaExecutionStatus::Success),
+        "node dry-run staking should succeed"
+    );
 
     // Local VM: pre-fetch every referenced object over gRPC, then dev-inspect
     // offline against the same Move engine the node uses.
@@ -124,22 +111,67 @@ async fn compare_local_vm_staking_against_test_cluster() {
     let result = vm
         .execute(tx_data.clone(), ExecuteOptions::dev_inspect())
         .expect("local dev-inspect should succeed");
-    let local_summary = SimulationSummary {
-        success: result.effects.status().is_success(),
-        created_count: result.effects.created().len(),
-        mutated_count: result.effects.mutated().len(),
-        deleted_count: result.effects.deleted().len(),
-        events_count: result.events.as_ref().map(|e| e.0.len()).unwrap_or(0),
-    };
     assert!(
-        local_summary.success,
+        result.effects.status().is_success(),
         "local dev-inspect staking should succeed: {:?}",
         result.effects.status()
     );
 
+    // Compare the full object references: the `ObjectRef` carries each object's
+    // version and content digest, so both backends must agree on the resulting
+    // contents, not merely on which objects were touched.
+    //
+    // The gas object is the one principled exception: local dev-inspect and the
+    // node's dry-run meter gas differently, so the gas coin's post-execution
+    // balance — and therefore its digest — can legitimately differ. We compare
+    // it by id and owner only, and exclude it from the full-ref mutated set.
+    let node_gas = (
+        dry_run.effects.gas_object().object_id(),
+        dry_run.effects.gas_object().owner,
+    );
+    let (local_gas_ref, local_gas_owner) = result.effects.gas_object();
+    let local_gas = (local_gas_ref.object_id, local_gas_owner);
     assert_eq!(
-        node_summary, local_summary,
-        "node dry-run and local VM should agree on the staking effects summary"
+        node_gas, local_gas,
+        "node dry-run and local VM should agree on the gas object id and owner"
+    );
+
+    let node_created: BTreeSet<(ObjectRef, Owner)> = dry_run
+        .effects
+        .created()
+        .iter()
+        .map(|o| (o.reference, o.owner))
+        .collect();
+    let node_mutated: BTreeSet<(ObjectRef, Owner)> = dry_run
+        .effects
+        .mutated()
+        .iter()
+        .filter(|o| o.object_id() != node_gas.0)
+        .map(|o| (o.reference, o.owner))
+        .collect();
+    let node_deleted: BTreeSet<ObjectRef> = dry_run.effects.deleted().iter().copied().collect();
+
+    let local_created: BTreeSet<(ObjectRef, Owner)> =
+        result.effects.created().into_iter().collect();
+    let local_mutated: BTreeSet<(ObjectRef, Owner)> = result
+        .effects
+        .mutated()
+        .into_iter()
+        .filter(|(r, _)| r.object_id != local_gas.0)
+        .collect();
+    let local_deleted: BTreeSet<ObjectRef> = result.effects.deleted().into_iter().collect();
+
+    assert_eq!(
+        node_created, local_created,
+        "node dry-run and local VM should create the same objects"
+    );
+    assert_eq!(
+        node_mutated, local_mutated,
+        "node dry-run and local VM should mutate the same objects"
+    );
+    assert_eq!(
+        node_deleted, local_deleted,
+        "node dry-run and local VM should delete the same objects"
     );
 
     // Optionally capture this run as a wasm-example fixture. Off by default;
