@@ -11,6 +11,9 @@ min_block_delay:
 soft_leader_timeout:
   secs: 0
   nanos: 100000000
+block_rate_window:
+  secs: 2
+  nanos: 0
 max_forward_time_drift:
   secs: 0
   nanos: 500000000

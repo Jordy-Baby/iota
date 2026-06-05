@@ -28,7 +28,8 @@ pub struct Parameters {
     #[serde(default = "Parameters::default_leader_timeout")]
     pub leader_timeout: Duration,
 
-    /// Minimum delay between own blocks. This avoids generating too many rounds
+    /// Sustained spacing between own blocks: long-run production never exceeds
+    /// one block per `min_block_delay`. This avoids generating too many rounds
     /// when latency is low. This is especially necessary for tests running
     /// locally. If setting a non-default value, it should be set low enough
     /// to avoid reducing round rate and increasing latency in realistic and
@@ -42,6 +43,14 @@ pub struct Parameters {
     /// than `leader_timeout` and does not force block creation on its own.
     #[serde(default = "Parameters::default_soft_leader_timeout")]
     pub soft_leader_timeout: Duration,
+
+    /// Window bounding own block production together with `min_block_delay`:
+    /// idle time accrues budget for bursts of up to `block_rate_window /
+    /// min_block_delay` back-to-back blocks, letting a validator that fell
+    /// behind catch up on rounds instead of skipping them. Set at or below
+    /// `min_block_delay` to disable bursting (fixed spacing between blocks).
+    #[serde(default = "Parameters::default_block_rate_window")]
+    pub block_rate_window: Duration,
 
     /// Maximum forward time drift (how far in future) allowed for received
     /// blocks.
@@ -166,6 +175,17 @@ impl Parameters {
 
     pub(crate) fn default_soft_leader_timeout() -> Duration {
         Duration::from_millis(100)
+    }
+
+    pub(crate) fn default_block_rate_window() -> Duration {
+        Duration::from_secs(2)
+    }
+
+    /// Burst capacity: maximum number of own blocks within `block_rate_window`
+    /// (40 in production, 5 in msim, 8 in tests with the default window).
+    pub fn block_rate_burst(&self) -> u64 {
+        let interval_ms = self.min_block_delay.as_millis().max(1) as u64;
+        (self.block_rate_window.as_millis() as u64 / interval_ms).max(1)
     }
 
     pub(crate) fn default_max_forward_time_drift() -> Duration {
@@ -296,6 +316,7 @@ impl Default for Parameters {
             leader_timeout: Parameters::default_leader_timeout(),
             min_block_delay: Parameters::default_min_block_delay(),
             soft_leader_timeout: Parameters::default_soft_leader_timeout(),
+            block_rate_window: Parameters::default_block_rate_window(),
             max_forward_time_drift: Parameters::default_max_forward_time_drift(),
             max_headers_per_commit_sync_fetch:
                 Parameters::default_max_headers_per_commit_sync_fetch(),
