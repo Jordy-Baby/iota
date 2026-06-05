@@ -5,9 +5,6 @@ FROM rust:${RUST_IMAGE_VERSION} AS builder
 ARG PROFILE=release
 ARG TARGET_FOLDER=target/release
 ARG CARGO_BUILD_FEATURES
-# The GIT_REVISION environment variable is used during build time inside the rust crates
-ARG GIT_REVISION
-ENV GIT_REVISION=$GIT_REVISION
 
 WORKDIR "/iota"
 
@@ -27,6 +24,12 @@ COPY docs docs
 COPY external-crates external-crates
 COPY iota-execution iota-execution
 COPY Cargo.toml Cargo.lock ./
+
+# The GIT_REVISION environment variable is used during build time inside the
+# rust crates. Declared right before the build step so that a new revision
+# does not invalidate the apt and COPY layers above.
+ARG GIT_REVISION
+ENV GIT_REVISION=$GIT_REVISION
 
 # Build the binaries and copy them to the working directory
 RUN cargo build --profile ${PROFILE} \
