@@ -19,7 +19,7 @@ use tracing::{info, warn};
 
 /// The minimum and maximum protocol versions supported by this build.
 const MIN_PROTOCOL_VERSION: u64 = 1;
-pub const MAX_PROTOCOL_VERSION: u64 = 28;
+pub const MAX_PROTOCOL_VERSION: u64 = 29;
 
 /// Protocol version that IIP8 took effect.
 pub const PROTOCOL_VERSION_IIP8: u64 = 20;
@@ -151,6 +151,8 @@ pub const PROTOCOL_VERSION_IIP8: u64 = 20;
 // Version 28: Move authenticator contracts can now inspect which authenticator
 //             function the sender and sponsor used during transaction execution
 //             via new AuthContext accessors.
+// Version 29: Enable StarfishSpeed (strong-vote + adaptive-ack) and burst
+//             block proposals in Starfish consensus on all non-mainnet chains.
 #[derive(Copy, Clone, Debug, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ProtocolVersion(u64);
 
@@ -2842,6 +2844,15 @@ impl ProtocolConfig {
                     // digest. auth_context_digest_cost_base = 30 for 32 bytes →
                     // 9 × 30 = 270.
                     cfg.auth_context_authenticator_function_info_v1_cost_base = Some(270);
+                }
+                29 => {
+                    if chain != Chain::Mainnet {
+                        // Enable StarfishSpeed (strong-vote + adaptive-ack) and burst
+                        // block proposals on every non-mainnet chain. Requires
+                        // consensus_fast_commit_sync, which is already on for these
+                        // chains by v22.
+                        cfg.feature_flags.consensus_starfish_speed = true;
+                    }
                 }
                 // Use this template when making changes:
                 //

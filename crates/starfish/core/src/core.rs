@@ -259,7 +259,13 @@ impl Core {
         // Seed the rate limiter from own recent blocks so a quick restart does
         // not grant a fresh burst budget. Blocks older than the window cannot
         // affect it, so a bounded round lookback suffices.
-        let burst = context.parameters.block_rate_burst();
+        // Off the `consensus_starfish_speed` flag, burst 1 reproduces the
+        // fixed min-block-delay rule.
+        let burst = if context.protocol_config.consensus_starfish_speed() {
+            context.parameters.block_rate_burst()
+        } else {
+            1
+        };
         let mut proposal_rate_limiter =
             BlockRateLimiter::new(context.parameters.min_block_delay, burst);
         let lookback_start = last_signaled_round.saturating_sub(2 * burst as Round);
