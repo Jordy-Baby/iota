@@ -104,6 +104,20 @@ pub fn decode_transaction(tx_b64: &str) -> Result<JsValue, JsError> {
     serde_wasm_bindgen::to_value(&out).map_err(|e| JsError::new(&e.to_string()))
 }
 
+/// Decode a base-64 BCS [`TransactionData`] into its full JSON structure
+/// (sender, gas data, and the programmable transaction's inputs and commands),
+/// for display.
+#[wasm_bindgen]
+pub fn decode_transaction_json(tx_b64: &str) -> Result<JsValue, JsError> {
+    let bytes = b64_decode(tx_b64)?;
+    let tx: TransactionData =
+        bcs::from_bytes(&bytes).map_err(|e| JsError::new(&format!("bcs decode tx: {e}")))?;
+    // Round-trip through a JSON string (see the note in `simulate`) so the JS
+    // side receives a plain object rather than a `serde_wasm_bindgen` `Map`.
+    let json = serde_json::to_string(&tx).map_err(|e| JsError::new(&e.to_string()))?;
+    js_sys::JSON::parse(&json).map_err(|e| JsError::new(&format!("{e:?}")))
+}
+
 /// Derive the on-chain ID of a `Field<K, V>` wrapper object. Mirrors
 /// [`crate::derive_field_id`].
 #[wasm_bindgen]
