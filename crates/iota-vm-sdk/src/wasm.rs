@@ -197,12 +197,6 @@ pub struct SimulateRequest {
     /// verified before execution.
     #[serde(default)]
     pub signatures: Vec<String>,
-    /// When true, capture an instruction-level execution trace and return a
-    /// summary in [`SimulateResult::trace`]. Only the `MoveAuthenticator`
-    /// execution path threads a trace builder, so a trace is captured only for
-    /// `MoveAuthenticator`-signed transactions; other runs leave `trace` null.
-    #[serde(default)]
-    pub trace: bool,
 }
 
 /// The owner of an object, in a JS-friendly tagged form.
@@ -313,83 +307,6 @@ pub struct CommandResultOut {
     pub mutable_reference_outputs: Vec<MoveCallValue>,
 }
 
-/// One opened call frame in the execution trace: a function entered by the VM.
-#[derive(Serialize, Deserialize)]
-pub struct TraceCall {
-    /// Fully-qualified function, `package::module::function`.
-    pub function: String,
-    /// Whether the function is a Move VM native.
-    pub is_native: bool,
-    /// Gas remaining when the frame was opened.
-    pub gas_left: u64,
-}
-
-/// A compact summary of a captured [`MoveTrace`], sized for display. The full
-/// per-instruction trace is large, so this keeps the totals plus the sequence
-/// of opened call frames (capped by `MAX_TRACE_CALLS`).
-#[derive(Serialize, Deserialize)]
-pub struct TraceSummary {
-    /// Total number of trace events (frames, instructions, and effects).
-    pub total_events: usize,
-    /// Number of bytecode instructions executed.
-    pub instructions: usize,
-    /// Gas remaining at the first trace event.
-    pub gas_start: Option<u64>,
-    /// Gas remaining at the last trace event.
-    pub gas_end: Option<u64>,
-    /// Opened call frames, in execution order (capped; see `calls_truncated`).
-    pub calls: Vec<TraceCall>,
-    /// True when `calls` was truncated to `MAX_TRACE_CALLS`.
-    pub calls_truncated: bool,
-}
-
-/// Cap on the number of call frames surfaced in a [`TraceSummary`]; a full
-/// trace can hold far more, but the example only needs a readable prefix.
-const MAX_TRACE_CALLS: usize = 200;
-
-impl TraceSummary {
-    fn from_trace(trace: &move_trace_format::format::MoveTrace) -> Self {
-        use move_trace_format::format::TraceEvent;
-
-        let gas_of = |ev: &TraceEvent| match ev {
-            TraceEvent::OpenFrame { gas_left, .. }
-            | TraceEvent::CloseFrame { gas_left, .. }
-            | TraceEvent::Instruction { gas_left, .. } => Some(*gas_left),
-            _ => None,
-        };
-
-        let mut instructions = 0;
-        let mut calls = Vec::new();
-        let mut calls_truncated = false;
-        for ev in &trace.events {
-            match ev {
-                TraceEvent::Instruction { .. } => instructions += 1,
-                TraceEvent::OpenFrame { frame, gas_left } => {
-                    if calls.len() < MAX_TRACE_CALLS {
-                        calls.push(TraceCall {
-                            function: format!("{}::{}", frame.module, frame.function_name),
-                            is_native: frame.is_native,
-                            gas_left: *gas_left,
-                        });
-                    } else {
-                        calls_truncated = true;
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        Self {
-            total_events: trace.events.len(),
-            instructions,
-            gas_start: trace.events.first().and_then(gas_of),
-            gas_end: trace.events.last().and_then(gas_of),
-            calls,
-            calls_truncated,
-        }
-    }
-}
-
 /// Output of [`simulate`]: the run's status, a flattened gas summary, the
 /// objects and events the transaction produced, and per-command dev-inspect
 /// results.
@@ -425,9 +342,6 @@ pub struct SimulateResult {
     /// `true` when signatures were supplied and verification (incl. any
     /// `MoveAuthenticator` function) succeeded.
     pub signature_verified: bool,
-    /// Execution-trace summary, present only when `trace` was requested and a
-    /// trace was captured (the `MoveAuthenticator` path).
-    pub trace: Option<TraceSummary>,
 }
 
 /// Run a [`SimulateRequest`] through the local Move VM and return a
@@ -460,17 +374,11 @@ pub fn simulate(req: JsValue) -> Result<JsValue, JsError> {
     };
     let mut vm = LocalVm::new(ctx, store).map_err(err_to_js)?;
 
-    let mut opts = if req.strict {
+    let opts = if req.strict {
         ExecuteOptions::dry_run()
     } else {
         ExecuteOptions::dev_inspect()
     };
-    if req.trace {
-        opts = opts.with_debug(crate::DebugConfig {
-            trace: true,
-            ..Default::default()
-        });
-    }
 
     let signed = !req.signatures.is_empty();
     let result = if signed {
@@ -572,14 +480,6 @@ pub fn simulate(req: JsValue) -> Result<JsValue, JsError> {
         })
         .collect();
 
-    // A trace is only captured on the `MoveAuthenticator` path; for other runs
-    // `debug.trace` is `None` even when `trace` was requested.
-    let trace = result
-        .debug
-        .as_ref()
-        .and_then(|d| d.trace.as_ref())
-        .map(TraceSummary::from_trace);
-
     let out = SimulateResult {
         success,
         status: format!("{status:?}"),
@@ -595,7 +495,6 @@ pub fn simulate(req: JsValue) -> Result<JsValue, JsError> {
         command_results,
         error: status.error().map(|e| format!("{e:?}")),
         signature_verified,
-        trace,
     };
     // Round-trip through a JSON string rather than `serde_wasm_bindgen`: the
     // decoded event payloads are `serde_json::Value`s, and `serde_json` renders
