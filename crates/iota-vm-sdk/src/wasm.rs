@@ -21,10 +21,11 @@
 use base64::Engine;
 use fastcrypto::traits::ToFromBytes;
 use iota_protocol_config::{Chain, ProtocolVersion};
+use iota_sdk_types::Owner;
 use iota_types::{
     base_types::ObjectRef,
     effects::TransactionEffectsAPI,
-    object::{Object, Owner},
+    object::Object,
     signature::GenericSignature,
     transaction::{SenderSignedData, TransactionData},
 };
