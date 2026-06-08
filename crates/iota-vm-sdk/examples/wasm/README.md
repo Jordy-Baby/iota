@@ -8,26 +8,27 @@ rejected signature, and a staking transaction that emits events.
 
 ## Run
 
-1. Build the wasm bundle. This needs the `wasm32-unknown-unknown` target and a
-   `wasm-bindgen` CLI matching the crate's `wasm-bindgen` version (run
-   `cargo tree -p iota-vm-sdk -i wasm-bindgen` to check it):
+This needs the `wasm32-unknown-unknown` target and a `wasm-bindgen` CLI matching
+the crate's `wasm-bindgen` version (run `cargo tree -p iota-vm-sdk -i
+wasm-bindgen` to check it):
 
-   ```sh
-   rustup target add wasm32-unknown-unknown
-   cargo install wasm-bindgen-cli --version <ver>   # e.g. 0.2.122
-   ./build.sh
-   ```
+```sh
+rustup target add wasm32-unknown-unknown
+cargo install wasm-bindgen-cli --version <ver>   # e.g. 0.2.122
+```
 
-2. Serve the crate root and open the example (the page fetches fixtures from
-   `../../tests/fixtures`, so it must be served from the crate root, not this
-   directory):
+Then one command builds the bundle (if missing) and serves it, printing the URL
+to open:
 
-   ```sh
-   cd ../..            # crates/iota-vm-sdk
-   python3 -m http.server 8000
-   ```
+```sh
+./serve.sh            # optional: ./serve.sh <port> (default 8000)
+```
 
-   Then open <http://localhost:8000/examples/wasm/> and pick an example.
+Open the printed <http://localhost:8000/examples/wasm/> and pick an example.
+
+`serve.sh` only builds when the bundle is missing; pass `--rebuild` to force a
+rebuild after changing the crate (`./serve.sh --rebuild`). It serves the crate
+root because the page fetches fixtures from `../../tests/fixtures`.
 
 ## Regenerating the staking fixture
 

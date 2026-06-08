@@ -7,29 +7,94 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>iota-vm-sdk wasm example</title>
     <style>
+      :root {
+        --bg: #161b24;
+        --panel: #1f2630;
+        --border: #3a424d;
+        --text: #eef2f7;
+        --muted: #9ba6b3;
+        --accent: #2dd4bf;
+        --ok: #3fb950;
+        --bad: #f85149;
+      }
+      * {
+        box-sizing: border-box;
+      }
       body {
         font-family: system-ui, sans-serif;
         max-width: 60rem;
-        margin: 2rem auto;
-        padding: 0 1rem;
+        margin: 0 auto;
+        padding: 3rem 1.25rem;
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.6;
+      }
+      h1 {
+        font-size: 1.6rem;
+        margin: 0 0 0.5rem;
+      }
+      p {
+        color: var(--muted);
+        margin-top: 0;
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.6rem;
+        margin: 1.75rem 0;
       }
       button {
-        margin: 0.25rem 0.5rem 0.25rem 0;
-        padding: 0.5rem 0.9rem;
+        font: inherit;
+        color: var(--text);
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 0.55rem 1rem;
         cursor: pointer;
+        transition: border-color 0.15s, background 0.15s;
+      }
+      button:hover {
+        border-color: var(--accent);
+        background: #1c232c;
+      }
+      button:active {
+        transform: translateY(1px);
+      }
+      #status {
+        font-size: 0.95rem;
+        font-weight: 600;
+        min-height: 1.4rem;
+        margin: 0 0 0.6rem;
+        color: var(--muted);
+      }
+      #status:empty::before {
+        display: none;
+      }
+      #status::before {
+        content: "";
+        display: inline-block;
+        width: 0.55rem;
+        height: 0.55rem;
+        border-radius: 50%;
+        margin-right: 0.5rem;
+        background: currentColor;
+        vertical-align: middle;
       }
       pre {
-        background: #1113;
-        padding: 1rem;
-        border-radius: 6px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        padding: 1rem 1.1rem;
+        border-radius: 10px;
         white-space: pre-wrap;
         word-break: break-word;
+        font-size: 0.85rem;
+        color: var(--muted);
       }
-      .ok {
-        color: #1a7f37;
+      #status.ok {
+        color: var(--ok);
       }
-      .bad {
-        color: #cf222e;
+      #status.bad {
+        color: var(--bad);
       }
     </style>
   </head>
@@ -41,18 +106,16 @@
       transaction plus the objects it touches).
     </p>
 
-    <div>
+    <div class="actions">
       <button id="valid">Valid: free-access authenticator</button>
       <button id="invalid">Invalid: bad ed25519 signature</button>
       <button id="stake">Staking: emits events</button>
     </div>
 
-    <h2 id="status"></h2>
+    <p id="status"></p>
     <pre id="output">Loading wasm…</pre>
 
     <script type="module">
-      import init, { simulate } from "./pkg/iota_vm_sdk.js";
-
       const statusEl = document.getElementById("status");
       const outputEl = document.getElementById("output");
 
@@ -63,6 +126,9 @@
         invalid: "../../tests/fixtures/move_auth_ed25519_invalid.json",
         stake: "../../tests/fixtures/stake.json",
       };
+
+      // Bound once the wasm module loads in the bootstrap below.
+      let simulate;
 
       async function run(which) {
         statusEl.textContent = "";
@@ -86,11 +152,24 @@
         }
       }
 
-      await init();
-      outputEl.textContent = "Ready. Pick an example above.";
-      document.getElementById("valid").addEventListener("click", () => run("valid"));
-      document.getElementById("invalid").addEventListener("click", () => run("invalid"));
-      document.getElementById("stake").addEventListener("click", () => run("stake"));
+      // Load the wasm via dynamic import so a missing build (404 on the js or
+      // wasm) is reported in the page. A static import would fail the whole
+      // module before any code runs, leaving "Loading wasm…" with only a
+      // console error.
+      try {
+        const wasm = await import("./pkg/iota_vm_sdk.js");
+        simulate = wasm.simulate;
+        await wasm.default();
+        outputEl.textContent = "Ready. Pick an example above.";
+        document.getElementById("valid").addEventListener("click", () => run("valid"));
+        document.getElementById("invalid").addEventListener("click", () => run("invalid"));
+        document.getElementById("stake").addEventListener("click", () => run("stake"));
+      } catch (e) {
+        statusEl.textContent = "Failed to load wasm";
+        statusEl.className = "bad";
+        outputEl.textContent = String(e) +
+          "\n\nDid you build the wasm package? See README.md.";
+      }
     </script>
   </body>
 </html>
