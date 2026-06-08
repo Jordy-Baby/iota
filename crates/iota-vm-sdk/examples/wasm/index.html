@@ -71,9 +71,14 @@
         margin: 0;
         max-width: 44rem;
       }
+      p.lead code {
+        color: #c7d0db;
+        font-size: 0.85em;
+      }
       .actions {
         display: flex;
         flex-wrap: wrap;
+        align-items: center;
         gap: 0.6rem;
         margin: 2.25rem 0 1.5rem;
       }
@@ -85,7 +90,7 @@
         background: var(--panel);
         border: 1px solid var(--border);
         border-radius: 10px;
-        padding: 0.6rem 1.1rem;
+        padding: 0.6rem 1.1rem 0.6rem 1.9rem;
         cursor: pointer;
         backdrop-filter: blur(8px);
         box-shadow: var(--shadow);
@@ -104,27 +109,56 @@
         box-shadow: 0 0 8px var(--dot, var(--accent));
         transform: translateY(-50%);
       }
-      button {
-        padding-left: 1.9rem;
-      }
-      button.valid {
-        --dot: var(--ok);
-      }
-      button.invalid {
-        --dot: var(--bad);
-      }
-      button.stake {
-        --dot: var(--accent);
-      }
-      button:hover {
+      button:hover:not(:disabled) {
         border-color: color-mix(in srgb, var(--dot, var(--accent)) 60%, transparent);
         box-shadow: var(--shadow),
           0 0 0 1px color-mix(in srgb, var(--dot, var(--accent)) 25%, transparent),
           0 8px 24px -10px color-mix(in srgb, var(--dot, var(--accent)) 70%, transparent);
         transform: translateY(-1px);
       }
-      button:active {
+      button:active:not(:disabled) {
         transform: translateY(0);
+      }
+      button:disabled {
+        opacity: 0.55;
+        cursor: progress;
+      }
+      .hint {
+        font-size: 0.8rem;
+        color: var(--muted);
+      }
+      label {
+        font-size: 0.78rem;
+        font-weight: 600;
+        color: var(--muted);
+      }
+      textarea {
+        width: 100%;
+        resize: vertical;
+        background: rgba(9, 12, 18, 0.55);
+        color: #c7d0db;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 0.6rem 0.7rem;
+        font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+        font-size: 0.78rem;
+        line-height: 1.5;
+      }
+      textarea:focus {
+        outline: none;
+        border-color: var(--accent);
+        box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
+      }
+      .custom-body {
+        display: flex;
+        flex-direction: column;
+        gap: 0.45rem;
+        padding: 1rem 1.25rem 1.2rem;
+      }
+      .custom-body button {
+        align-self: flex-start;
+        --dot: #818cf8;
+        margin-top: 0.5rem;
       }
       .panel {
         border: 1px solid var(--border);
@@ -137,6 +171,12 @@
         backdrop-filter: blur(10px);
         box-shadow: var(--shadow);
         overflow: hidden;
+      }
+      .panel + .panel {
+        margin-top: 1rem;
+      }
+      .panel[hidden] {
+        display: none;
       }
       #status {
         display: flex;
@@ -171,6 +211,26 @@
       #status.bad {
         color: var(--bad);
       }
+      #status.busy {
+        color: var(--accent);
+      }
+      #timing {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem 1.4rem;
+        padding: 0.6rem 1.2rem;
+        font-size: 0.78rem;
+        color: var(--muted);
+        border-bottom: 1px solid var(--border);
+        font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+      }
+      #timing:empty {
+        display: none;
+      }
+      #timing b {
+        color: var(--text);
+        font-weight: 600;
+      }
       .cap {
         font-size: 0.7rem;
         font-weight: 600;
@@ -179,9 +239,6 @@
         color: var(--muted);
         padding: 0.7rem 1.2rem;
         border-bottom: 1px solid var(--border);
-      }
-      .panel + .panel {
-        margin-top: 1rem;
       }
       #tx-desc {
         margin: 0;
@@ -194,7 +251,8 @@
         display: none;
       }
       #tx,
-      #output {
+      #output,
+      #log {
         margin: 0;
         padding: 1.1rem 1.25rem;
         white-space: pre-wrap;
@@ -204,7 +262,22 @@
         color: #c7d0db;
         font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
       }
-      /* Collapsible JSON tree (built in jsonNode below; native <details>). */
+      #log {
+        max-height: 18rem;
+        overflow: auto;
+        white-space: pre;
+        word-break: normal;
+      }
+      #log .obj {
+        color: #7dcfff;
+      }
+      #log .miss {
+        color: var(--bad);
+      }
+      #log .info {
+        color: var(--muted);
+      }
+      /* Collapsible JSON tree (built in jsonNode; native <details>). */
       .jrow {
         padding-left: 1.15em;
       }
@@ -261,18 +334,33 @@
     </style>
   </head>
   <body>
-    <p class="eyebrow">Move VM · WebAssembly</p>
+    <p class="eyebrow">Move VM · WebAssembly · Testnet</p>
     <h1>iota-vm-sdk in the browser</h1>
     <p class="lead">
-      Runs an example transaction through the local Move VM compiled to wasm and
-      shows the result. Each example reuses a committed test fixture (a
-      transaction plus the objects it touches).
+      Builds a real <code>0x3::iota_system::request_add_stake</code> transaction
+      with the IOTA TypeScript SDK against testnet, then simulates it in the
+      local Move VM compiled to wasm. The VM resolves the objects it touches
+      <em>on demand</em>: every object it reads — inputs and the dynamic-field
+      children staking walks — is fetched from testnet GraphQL the moment the VM
+      asks for it. Nothing is executed on a node.
     </p>
 
     <div class="actions">
-      <button id="valid" class="valid">Valid: free-access authenticator</button>
-      <button id="invalid" class="invalid">Invalid: bad ed25519 signature</button>
-      <button id="stake" class="stake">Staking: emits events</button>
+      <button id="run" disabled>Simulate stake on testnet</button>
+      <span class="hint" id="hint">Loading wasm…</span>
+    </div>
+
+    <div class="panel" id="custom-card">
+      <div class="cap">Or simulate your own transaction · dev-inspect</div>
+      <div class="custom-body">
+        <label for="tx-bytes">Transaction bytes (base64)</label>
+        <textarea id="tx-bytes" rows="4" spellcheck="false">AAABAAkIaXQgd29ya3MAIiK0ZqJDmevPXsDwSCCBKuIP6hA3xzbP7GCHU6o4tSIBGa9Eqf1/6tvSdh+wiOzmncFvNbDVKhrwnG2+mod0if4TzX0gAAAAACARcIr3JBZ9MAK/Qi9/al1VcgIgRZTdeSNusJKWu30/2yIitGaiQ5nrz17A8EgggSriD+oQN8c2z+xgh1OqOLUi6AMAAAAAAAAwei0AAAAAAAA=</textarea>
+        <label for="sigs">
+          Signatures (base64, one per line — optional; e.g. sender + sponsor)
+        </label>
+        <textarea id="sigs" rows="3" spellcheck="false">ALQ1xVlJf+35eDX3pbVAS1zC4g6yBJfEZVRN7vLoIjwEP9X1dOQad0Ll4QLyAzZ+hd9XNlf5XLx/qnC/g/fCYA1g1IR8PPJ7k5nBCTcxUC6JZ/5NvLj60T4Y+Yd4PO8vQg==</textarea>
+        <button id="run-custom" disabled>Simulate custom transaction</button>
+      </div>
     </div>
 
     <div class="panel" id="tx-panel" hidden>
@@ -281,138 +369,18 @@
       <div id="tx"></div>
     </div>
 
-    <div class="panel">
+    <div class="panel" id="result-panel" hidden>
       <div class="cap">Result</div>
       <p id="status"></p>
-      <div id="output">Loading wasm…</div>
+      <div id="timing"></div>
+      <div id="output"></div>
     </div>
 
-    <script type="module">
-      const statusEl = document.getElementById("status");
-      const outputEl = document.getElementById("output");
-      const txPanel = document.getElementById("tx-panel");
-      const txDescEl = document.getElementById("tx-desc");
-      const txEl = document.getElementById("tx");
+    <div class="panel" id="log-panel" hidden>
+      <div class="cap">Objects fetched on demand</div>
+      <div id="log"></div>
+    </div>
 
-      // Fixtures live in the crate's test suite; serve the crate root so this
-      // relative path resolves (see README.md).
-      const FIXTURES = {
-        valid: "../../tests/fixtures/move_auth_free_access_valid.json",
-        invalid: "../../tests/fixtures/move_auth_ed25519_invalid.json",
-        stake: "../../tests/fixtures/stake.json",
-      };
-
-      // Bound once the wasm module loads in the bootstrap below.
-      let simulate;
-      let decodeTransactionJson;
-
-      async function run(which) {
-        statusEl.textContent = "";
-        outputEl.textContent = "Running…";
-        try {
-          const fixture = await (await fetch(FIXTURES[which])).json();
-          // Decode and show the transaction being simulated (sender, gas, and
-          // the PTB inputs/commands) before running it.
-          showTransaction(fixture);
-          // The fixture already carries every SimulateRequest field; run in
-          // dev-inspect (relaxed checks) since the fixtures carry no real gas.
-          const result = simulate({ ...fixture, strict: false });
-          const verdict = result.success ? "succeeded" : "failed";
-          statusEl.textContent = `Execution ${verdict}` +
-            (fixture.signatures?.length
-              ? ` · signature ${result.signature_verified ? "verified" : "rejected"}`
-              : "");
-          statusEl.className = result.success ? "ok" : "bad";
-          showResult(result);
-        } catch (e) {
-          statusEl.textContent = "Error";
-          statusEl.className = "bad";
-          outputEl.textContent = String(e);
-        }
-      }
-
-      // Render a result into the output panel as a collapsible JSON tree.
-      function showResult(result) {
-        outputEl.textContent = "";
-        outputEl.append(jsonNode(result, null));
-      }
-
-      // Decode the fixture's transaction and render it as a collapsible tree,
-      // with the fixture's description as a caption above it. The tree starts
-      // collapsed (it's secondary to the result); expanding shows it in full.
-      function showTransaction(fixture) {
-        txDescEl.textContent = fixture.description ?? "";
-        txEl.textContent = "";
-        txEl.append(jsonNode(decodeTransactionJson(fixture.tx_b64), null, false));
-        txPanel.hidden = false;
-      }
-
-      const span = (cls, text) => {
-        const el = document.createElement("span");
-        el.className = cls;
-        el.textContent = text;
-        return el;
-      };
-
-      // Build a collapsible DOM tree for a JSON value using native <details>.
-      // `key` labels this node (object key or array index), or null at the root.
-      // `open` controls whether this node starts expanded; nested nodes always
-      // start open, so expanding a collapsed root reveals the whole subtree.
-      function jsonNode(value, key, open = true) {
-        const label = key === null ? null : span("jkey", JSON.stringify(key));
-        if (value === null || typeof value !== "object") {
-          const cls = value === null ? "jnull"
-            : typeof value === "string" ? "jstr"
-            : typeof value === "number" ? "jnum" : "jbool";
-          const row = document.createElement("div");
-          row.className = "jrow";
-          if (label) row.append(label, span("jpunct", ": "));
-          const text = typeof value === "string" ? JSON.stringify(value) : String(value);
-          row.append(span(cls, text));
-          return row;
-        }
-
-        const arr = Array.isArray(value);
-        const entries = arr ? value.map((v, i) => [i, v]) : Object.entries(value);
-        const close = arr ? "]" : "}";
-
-        const details = document.createElement("details");
-        details.className = "jnode";
-        details.open = open;
-
-        const summary = document.createElement("summary");
-        if (label) summary.append(label, span("jpunct", ": "));
-        summary.append(span("jpunct", arr ? "[" : "{"));
-        summary.append(span("jcount", ` ${entries.length} ${arr ? "items" : "keys"} `));
-        summary.append(span("jclosed jpunct", close));
-
-        const kids = document.createElement("div");
-        kids.className = "jkids";
-        for (const [k, v] of entries) kids.append(jsonNode(v, k));
-
-        details.append(summary, kids, span("jbrace jpunct", close));
-        return details;
-      }
-
-      // Load the wasm via dynamic import so a missing build (404 on the js or
-      // wasm) is reported in the page. A static import would fail the whole
-      // module before any code runs, leaving "Loading wasm…" with only a
-      // console error.
-      try {
-        const wasm = await import("./pkg/iota_vm_sdk.js");
-        simulate = wasm.simulate;
-        decodeTransactionJson = wasm.decode_transaction_json;
-        await wasm.default();
-        outputEl.textContent = "Ready. Pick an example above.";
-        document.getElementById("valid").addEventListener("click", () => run("valid"));
-        document.getElementById("invalid").addEventListener("click", () => run("invalid"));
-        document.getElementById("stake").addEventListener("click", () => run("stake"));
-      } catch (e) {
-        statusEl.textContent = "Failed to load wasm";
-        statusEl.className = "bad";
-        outputEl.textContent = String(e) +
-          "\n\nDid you build the wasm package? See README.md.";
-      }
-    </script>
+    <script type="module" src="./app.bundle.js"></script>
   </body>
 </html>

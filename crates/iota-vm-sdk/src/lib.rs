@@ -40,6 +40,9 @@ pub mod graphql;
 #[cfg(all(feature = "wasm-bindgen", target_arch = "wasm32"))]
 mod wasm;
 
+#[cfg(all(feature = "wasm-bindgen", target_arch = "wasm32"))]
+mod wasm_store;
+
 // --- SDK surface ---------------------------------------------------------
 
 pub use debug::{DebugArtifacts, DebugConfig, DebugPrint, ProfileOutput, ProfileSink};

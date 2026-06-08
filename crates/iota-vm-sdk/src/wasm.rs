@@ -36,7 +36,7 @@ use crate::{
     ChainContext, ExecuteOptions, LocalVm,
     decode::{auth_function_field_id, decode_transaction as decode_transaction_inner},
     error::VmSdkError,
-    store::InMemoryStore,
+    wasm_store::CallbackStore,
 };
 
 /// Module entry point: install a panic hook that surfaces Rust panics in the
@@ -102,20 +102,6 @@ pub fn decode_transaction(tx_b64: &str) -> Result<JsValue, JsError> {
             .collect(),
     };
     serde_wasm_bindgen::to_value(&out).map_err(|e| JsError::new(&e.to_string()))
-}
-
-/// Decode a base-64 BCS [`TransactionData`] into its full JSON structure
-/// (sender, gas data, and the programmable transaction's inputs and commands),
-/// for display.
-#[wasm_bindgen]
-pub fn decode_transaction_json(tx_b64: &str) -> Result<JsValue, JsError> {
-    let bytes = b64_decode(tx_b64)?;
-    let tx: TransactionData =
-        bcs::from_bytes(&bytes).map_err(|e| JsError::new(&format!("bcs decode tx: {e}")))?;
-    // Round-trip through a JSON string (see the note in `simulate`) so the JS
-    // side receives a plain object rather than a `serde_wasm_bindgen` `Map`.
-    let json = serde_json::to_string(&tx).map_err(|e| JsError::new(&e.to_string()))?;
-    js_sys::JSON::parse(&json).map_err(|e| JsError::new(&format!("{e:?}")))
 }
 
 /// Derive the on-chain ID of a `Field<K, V>` wrapper object. Mirrors
@@ -359,10 +345,15 @@ pub struct SimulateResult {
 }
 
 /// Run a [`SimulateRequest`] through the local Move VM and return a
-/// [`SimulateResult`]. Loads the supplied objects into an in-memory store,
-/// verifies any signatures, and executes in dry-run or dev-inspect mode.
+/// [`SimulateResult`].
+///
+/// Objects are resolved on demand: `fetch_object(id_hex: string) -> string |
+/// null` is called for any object the VM needs that isn't already cached, and
+/// must return the object's base-64 BCS (synchronously, since the VM is
+/// synchronous). `req.objects` may pre-seed the cache but can be empty. The
+/// transaction is run in dry-run or dev-inspect mode, verifying any signatures.
 #[wasm_bindgen]
-pub fn simulate(req: JsValue) -> Result<JsValue, JsError> {
+pub fn simulate(req: JsValue, fetch_object: js_sys::Function) -> Result<JsValue, JsError> {
     let req: SimulateRequest =
         serde_wasm_bindgen::from_value(req).map_err(|e| JsError::new(&e.to_string()))?;
 
@@ -370,14 +361,16 @@ pub fn simulate(req: JsValue) -> Result<JsValue, JsError> {
     let tx: TransactionData =
         bcs::from_bytes(&tx_bytes).map_err(|e| JsError::new(&format!("bcs decode tx: {e}")))?;
 
-    let mut store = InMemoryStore::with_framework();
+    let store = CallbackStore::new(fetch_object);
+    let mut seed = Vec::with_capacity(req.objects.len());
     for (i, o) in req.objects.iter().enumerate() {
         let bytes =
             b64_decode(&o.bcs_b64).map_err(|_| JsError::new(&format!("object[{i}] base64")))?;
         let obj: Object =
             bcs::from_bytes(&bytes).map_err(|e| JsError::new(&format!("object[{i}] bcs: {e}")))?;
-        crate::store::Store::insert(&mut store, obj);
+        seed.push(obj);
     }
+    store.seed(seed);
 
     let ctx = ChainContext {
         protocol_version: ProtocolVersion::new(req.protocol_version),
