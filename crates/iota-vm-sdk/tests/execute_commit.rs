@@ -65,7 +65,7 @@ fn transfer_tx(
     b.transfer_iota(recipient, Some(amount));
     TransactionData::new_programmable(
         sender,
-        vec![gas.compute_object_reference()],
+        vec![gas.object_ref()],
         b.finish(),
         TEST_ONLY_GAS_UNIT_FOR_HEAVY_COMPUTATION_STORAGE * GAS_PRICE,
         GAS_PRICE,
