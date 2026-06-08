@@ -11,7 +11,7 @@
 
 use std::collections::HashSet;
 
-use iota_sdk_types::ObjectId;
+use iota_sdk_types::{ObjectId, Owner};
 use iota_types::{
     account_abstraction::{
         account::AuthenticatorFunctionRefV1Key,
@@ -27,7 +27,7 @@ use iota_types::{
     gas_coin::NANOS_PER_IOTA,
     layout_resolver::LayoutResolver,
     move_authenticator::MoveAuthenticator,
-    object::{MoveObject, MoveObjectExt, Object, Owner},
+    object::{MoveObject, MoveObjectExt, Object},
     storage::BackingStore,
     transaction::{
         CheckedInputObjects, InputObjectKind, InputObjects, ObjectReadResult,
