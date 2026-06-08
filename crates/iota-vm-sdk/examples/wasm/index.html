@@ -110,6 +110,7 @@
       <button id="valid">Valid: free-access authenticator</button>
       <button id="invalid">Invalid: bad ed25519 signature</button>
       <button id="stake">Staking: emits events</button>
+      <button id="trace">Trace: free-access authenticator</button>
     </div>
 
     <p id="status"></p>
@@ -130,26 +131,57 @@
       // Bound once the wasm module loads in the bootstrap below.
       let simulate;
 
-      async function run(which) {
+      async function run(which, { trace = false } = {}) {
         statusEl.textContent = "";
-        outputEl.textContent = "Running…";
+        outputEl.textContent = trace ? "Tracing…" : "Running…";
         try {
           const fixture = await (await fetch(FIXTURES[which])).json();
           // The fixture already carries every SimulateRequest field; run in
           // dev-inspect (relaxed checks) since the fixtures carry no real gas.
-          const result = simulate({ ...fixture, strict: false });
+          const result = simulate({ ...fixture, strict: false, trace });
           const verdict = result.success ? "succeeded" : "failed";
           statusEl.textContent = `Execution ${verdict}` +
             (fixture.signatures?.length
               ? ` · signature ${result.signature_verified ? "verified" : "rejected"}`
               : "");
           statusEl.className = result.success ? "ok" : "bad";
-          outputEl.textContent = JSON.stringify(result, null, 2);
+          outputEl.textContent = trace
+            ? renderTrace(result.trace) + "\n\n" + JSON.stringify(result, null, 2)
+            : JSON.stringify(result, null, 2);
         } catch (e) {
           statusEl.textContent = "Error";
           statusEl.className = "bad";
           outputEl.textContent = String(e);
         }
+      }
+
+      // Render the trace summary returned by `simulate({ trace: true })`. A
+      // trace is only captured on the MoveAuthenticator path, so `trace` is
+      // null for other runs.
+      function renderTrace(trace) {
+        if (!trace) {
+          return "No trace captured — tracing is only available for " +
+            "MoveAuthenticator-signed transactions.";
+        }
+        const lines = [
+          "Execution trace",
+          `  events:       ${trace.total_events}`,
+          `  instructions: ${trace.instructions}`,
+        ];
+        if (trace.gas_start != null && trace.gas_end != null) {
+          lines.push(
+            `  gas:          ${trace.gas_start} → ${trace.gas_end} ` +
+            `(−${trace.gas_start - trace.gas_end})`,
+          );
+        }
+        lines.push("", "Call frames:");
+        for (const c of trace.calls) {
+          lines.push(
+            `  → ${c.function}${c.is_native ? "  [native]" : ""}  ·  gas ${c.gas_left}`,
+          );
+        }
+        if (trace.calls_truncated) lines.push("  … (truncated)");
+        return lines.join("\n");
       }
 
       // Load the wasm via dynamic import so a missing build (404 on the js or
@@ -164,6 +196,7 @@
         document.getElementById("valid").addEventListener("click", () => run("valid"));
         document.getElementById("invalid").addEventListener("click", () => run("invalid"));
         document.getElementById("stake").addEventListener("click", () => run("stake"));
+        document.getElementById("trace").addEventListener("click", () => run("valid", { trace: true }));
       } catch (e) {
         statusEl.textContent = "Failed to load wasm";
         statusEl.className = "bad";

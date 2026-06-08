@@ -6,6 +6,15 @@ created/mutated/deleted objects, and decoded events). It reuses the crate's
 committed test fixtures to demonstrate three outcomes: a valid authenticator, a
 rejected signature, and a staking transaction that emits events.
 
+A fourth example, **Trace**, re-runs the valid authenticator with instruction
+tracing on and prints a summary (event/instruction counts, gas, and the call
+frames). Tracing is only captured on the `MoveAuthenticator` execution path, so
+the other (dev-inspect) examples can't produce a trace.
+
+Move `debug::print` output is **not** surfaced in the page: the VM writes it to
+stdout, which wasm has no access to, and there is currently no in-memory
+capture sink (see the note in `src/executor/env.rs`).
+
 ## Run
 
 This needs the `wasm32-unknown-unknown` target and a `wasm-bindgen` CLI matching
