@@ -81,13 +81,13 @@ fn replay(name: &str) -> (iota_sdk_types::ExecutionStatus, SignatureStatus) {
         .collect();
     let signed = SenderSignedData::new(tx, sigs);
 
-    let ctx = ChainContext {
-        protocol_version: ProtocolVersion::new(f.protocol_version),
-        reference_gas_price: f.reference_gas_price,
-        epoch_id: f.epoch_id,
-        epoch_timestamp_ms: f.epoch_timestamp_ms,
-        chain: Chain::Unknown,
-    };
+    let ctx = ChainContext::new(
+        ProtocolVersion::new(f.protocol_version),
+        f.reference_gas_price,
+        f.epoch_id,
+        f.epoch_timestamp_ms,
+        Chain::Unknown,
+    );
     let mut vm = LocalVm::new(ctx, store).expect("build LocalVm");
 
     let result = vm

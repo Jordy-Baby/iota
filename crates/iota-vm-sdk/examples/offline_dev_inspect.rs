@@ -21,13 +21,7 @@ fn main() -> Result<()> {
     // Framework packages (0x1, 0x2, …) are compiled into the binary.
     let store = InMemoryStore::with_framework();
 
-    let ctx = ChainContext {
-        protocol_version: ProtocolVersion::MAX,
-        reference_gas_price: 1000,
-        epoch_id: 0,
-        epoch_timestamp_ms: 0,
-        chain: Chain::Unknown,
-    };
+    let ctx = ChainContext::new(ProtocolVersion::MAX, 1000, 0, 0, Chain::Unknown);
     let mut vm = LocalVm::new(ctx, store)?;
 
     // Base64-encoded BCS for: 0x2::hash::blake2b256([0, 1, 2]).
