@@ -10,9 +10,7 @@ use std::collections::BTreeSet;
 use iota_json_rpc_types::{IotaExecutionStatus, IotaTransactionBlockEffectsAPI};
 use iota_sdk_types::Owner;
 use iota_test_transaction_builder::TestTransactionBuilder;
-use iota_types::{
-    base_types::ObjectRef, effects::TransactionEffectsAPI, transaction::TransactionData,
-};
+use iota_types::{base_types::ObjectRef, effects::TransactionEffectsAPI};
 use iota_vm_sdk::{ExecuteOptions, LocalVm, grpc::GrpcStore};
 use test_cluster::TestClusterBuilder;
 

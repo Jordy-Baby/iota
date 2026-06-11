@@ -12,7 +12,9 @@ use iota_types::{
     digests::TransactionDigest,
     object::{MoveObject, MoveObjectExt, Object},
     programmable_transaction_builder::ProgrammableTransactionBuilder,
-    transaction::{TEST_ONLY_GAS_UNIT_FOR_HEAVY_COMPUTATION_STORAGE, TransactionData},
+    transaction::{
+        TEST_ONLY_GAS_UNIT_FOR_HEAVY_COMPUTATION_STORAGE, TransactionData, TransactionDataAPI,
+    },
     utils::to_sender_signed_transaction,
 };
 use iota_vm_sdk::{
@@ -124,9 +126,9 @@ fn missing_input_object_is_reported_with_its_id() {
     let store = InMemoryStore::with_framework();
     let mut vm = LocalVm::new(chain_context(), store).expect("build LocalVm");
 
-    let err = vm
-        .execute(tx, ExecuteOptions::dry_run())
-        .expect_err("a missing gas object must fail preparation");
+    let Err(err) = vm.execute(tx, ExecuteOptions::dry_run()) else {
+        panic!("a missing gas object must fail preparation");
+    };
     match err {
         VmSdkError::MissingObject { id, .. } => assert_eq!(id, phantom_id),
         other => panic!("expected MissingObject, got {other:?}"),
