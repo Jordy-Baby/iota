@@ -4165,6 +4165,9 @@ impl AuthorityPerEpochStore {
         let mut randomness_state_updated = false;
         let mut sequenced_non_randomness = Vec::new();
         let mut sequenced_randomness = Vec::new();
+        // Per shared object, how many transactions are admitted (scheduled) to it
+        // in this commit. Observed into a histogram once per object at the end.
+        let mut num_txs_per_obj_in_this_commit: HashMap<ObjectID, u64> = HashMap::new();
 
         for entry in non_randomness_transactions
             .iter()
@@ -4215,6 +4218,11 @@ impl AuthorityPerEpochStore {
                     transaction,
                     start_time,
                 } => {
+                    for obj in transaction.shared_input_objects() {
+                        *num_txs_per_obj_in_this_commit
+                            .entry(obj.object_id)
+                            .or_default() += 1;
+                    }
                     notifications.push(key.clone());
                     sequenced_txns.push((transaction, start_time));
                 }
@@ -4314,6 +4322,12 @@ impl AuthorityPerEpochStore {
                     output.defer_transactions(key, txns);
                 }
             }
+        }
+
+        for count in num_txs_per_obj_in_this_commit.values() {
+            authority_metrics
+                .consensus_handler_scheduled_transactions_per_object_per_commit
+                .observe(*count as f64);
         }
 
         authority_metrics
@@ -4610,6 +4624,7 @@ impl AuthorityPerEpochStore {
                 self.handle_scheduling_result(
                     scheduling_result,
                     attested_transaction,
+                    commit_round,
                     previously_deferred_tx_digests,
                     dkg_failed,
                     shared_object_congestion_tracker,
@@ -4934,6 +4949,7 @@ impl AuthorityPerEpochStore {
         self.handle_scheduling_result(
             scheduling_result,
             attested_executable_tx,
+            commit_round,
             previously_deferred_tx_digests,
             dkg_failed,
             shared_object_congestion_tracker,
@@ -4949,6 +4965,7 @@ impl AuthorityPerEpochStore {
         &self,
         scheduling_result: SchedulingResult,
         verified_executable_tx: VerifiedExecutableAttestedTransaction,
+        commit_round: CommitRound,
         previously_deferred_tx_digests: &PreviouslyDeferredTransactions,
         dkg_failed: bool,
         shared_object_congestion_tracker: &mut SharedObjectCongestionTracker,
@@ -5027,6 +5044,13 @@ impl AuthorityPerEpochStore {
                                 verified_executable_tx.transaction_data().gas_price(),
                             );
 
+                            authority_metrics
+                                .consensus_handler_transaction_deferral_rounds
+                                .observe(
+                                    commit_round.saturating_sub(deferral_key.deferred_from_round())
+                                        as f64,
+                                );
+
                             ConsensusTransactionResult::Cancelled((
                                 verified_executable_tx,
                                 CancelConsensusTransactionReason::CongestionOnObjects {
@@ -5041,6 +5065,19 @@ impl AuthorityPerEpochStore {
                 Ok(deferral_result)
             }
             SchedulingResult::Schedule(start_time) => {
+                // If this transaction had been deferred in an earlier commit, record
+                // how many rounds it waited before being scheduled now.
+                if let Some((prior_deferral_key, _)) =
+                    previously_deferred_tx_digests.get(verified_executable_tx.digest())
+                {
+                    authority_metrics
+                        .consensus_handler_transaction_deferral_rounds
+                        .observe(
+                            commit_round.saturating_sub(prior_deferral_key.deferred_from_round())
+                                as f64,
+                        );
+                }
+
                 if dkg_failed && verified_executable_tx.uses_randomness() {
                     debug!(
                         "Canceling randomness-using verified executable transaction {:?} because \
