@@ -176,6 +176,7 @@ impl LocalVm {
                         prepared,
                         authenticator,
                         auth_digests,
+                        authenticator_gas_budget,
                         &mut trace_builder,
                     )?;
                     let status = match verdict {

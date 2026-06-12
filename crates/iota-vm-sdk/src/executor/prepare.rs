@@ -218,6 +218,7 @@ pub(super) fn execute_with_move_authenticator(
         iota_types::digests::Digest,
         Option<iota_types::digests::Digest>,
     ),
+    authenticator_gas_budget: u64,
     trace_builder_opt: &mut Option<MoveTraceBuilder>,
 ) -> Result<(SimulateTransactionResult, Result<(), String>), VmSdkError> {
     use iota_types::{
@@ -304,8 +305,12 @@ pub(super) fn execute_with_move_authenticator(
     } else {
         // The combined run failed; re-run the authenticator alone to learn
         // whether it was the authenticator or the transaction body that failed.
+        // Meter it with the authenticator budget the engine's signing phase
+        // uses (`max_auth_gas`), not the transaction budget — otherwise a tx
+        // budget smaller than the authenticator's needs would make the re-run
+        // run out of gas and look like a rejection.
         let verdict_gas_status = IotaGasStatus::new(
-            transaction.gas_budget(),
+            authenticator_gas_budget,
             transaction.gas_price(),
             env.reference_gas_price,
             &env.protocol_config,
