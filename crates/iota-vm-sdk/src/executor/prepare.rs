@@ -478,11 +478,7 @@ pub(super) fn decode_one_event(
     .map_err(|e| ExecutionError::new(format!("bcs deserialize {}: {e}", event.type_)))?;
 
     Ok(DecodedEvent {
-        package_id: event.package_id,
-        module: event.module.clone(),
-        name: event.type_.name().clone(),
-        sender: event.sender,
-        type_tag: event.type_.clone(),
+        event: event.clone(),
         value,
     })
 }
