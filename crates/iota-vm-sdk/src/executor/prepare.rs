@@ -41,7 +41,7 @@ use super::{
     env::ExecutionEnv,
     types::{DecodedEvent, ExecutionMode},
 };
-use crate::error::{ExecutionError, ValidationError, VmSdkError};
+use crate::error::{ExecutionError, ValidationError, VmError, VmSdkError};
 
 /// Value the VM stuffs into a mock gas coin when a transaction has no explicit
 /// gas payment. One billion IOTA in NANOs — wide enough to cover any realistic
@@ -364,14 +364,14 @@ fn resolve_authenticator_function_ref(
 ) -> Result<AuthenticatorFunctionRefForExecution, VmSdkError> {
     let (account_object_id, _version, _digest) = authenticator
         .object_to_authenticate_components()
-        .map_err(|e| ValidationError::new("invalid object_to_authenticate", e))?;
+        .map_err(|e| VmError::new(format!("invalid object_to_authenticate: {e}")))?;
 
     let field_id = dynamic_field::derive_dynamic_field_id(
         account_object_id,
         &AuthenticatorFunctionRefV1Key::tag().into(),
         &AuthenticatorFunctionRefV1Key::default().to_bcs_bytes(),
     )
-    .map_err(|e| ValidationError::new("derive authenticator field id", e))?;
+    .map_err(|e| VmError::new(format!("derive authenticator field id: {e}")))?;
 
     let field_obj =
         store
@@ -383,15 +383,12 @@ fn resolve_authenticator_function_ref(
             })?;
 
     let field_move_object = field_obj.data.as_struct_opt().ok_or_else(|| {
-        ValidationError::new(
-            "authenticator dynamic field",
-            "field object is not a Move object",
-        )
+        VmError::new("authenticator dynamic field: field object is not a Move object")
     })?;
 
     let field: Field<AuthenticatorFunctionRefV1Key, AuthenticatorFunctionRefV1> = field_move_object
         .to_rust()
-        .map_err(|e| ValidationError::new("deserialize AuthenticatorFunctionRefV1", e))?;
+        .map_err(|e| VmError::new(format!("deserialize AuthenticatorFunctionRefV1: {e}")))?;
 
     Ok(AuthenticatorFunctionRefForExecution::new_v1(
         field.value,

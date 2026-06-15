@@ -34,9 +34,7 @@ pub mod graphql;
 // --- SDK surface ---------------------------------------------------------
 
 pub use debug::{DebugArtifacts, DebugConfig, ProfileOutput, ProfileSink};
-pub use error::{
-    DecodeError, ExecutionError, SignatureError, ValidationError, VmError, VmSdkError,
-};
+pub use error::{ExecutionError, SignatureError, StoreError, ValidationError, VmError, VmSdkError};
 pub use executor::{
     ChainContext, DecodedEvent, ExecuteOptions, ExecutionMode, ExecutionResult, GasEstimate,
     LocalVm, SignatureStatus,
