@@ -124,6 +124,7 @@ impl ExecuteOptions {
 /// The full result of a run: effects, events, per-command results, the input
 /// and output object sets, gas accounting, signature status, whether the run
 /// was committed to the store, and any captured debug artifacts.
+#[derive(Debug)]
 #[non_exhaustive]
 pub struct ExecutionResult {
     pub effects: TransactionEffects,
