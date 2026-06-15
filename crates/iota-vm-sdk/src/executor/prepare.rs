@@ -16,9 +16,10 @@ use iota_types::{
     account_abstraction::{
         account::AuthenticatorFunctionRefV1Key,
         authenticator_function::{
-            AuthenticatorFunctionRefForExecution, AuthenticatorFunctionRefV1,
+            AuthenticatorFunctionRefForExecution, AuthenticatorFunctionRefV1, extract_auth_fun_refs,
         },
     },
+    auth_context::AuthContextData,
     digests::TransactionDigest,
     dynamic_field::{self, Field},
     effects::TransactionEffectsAPI,
@@ -221,11 +222,6 @@ pub(super) fn execute_with_move_authenticator(
     authenticator_gas_budget: u64,
     trace_builder_opt: &mut Option<MoveTraceBuilder>,
 ) -> Result<(SimulateTransactionResult, Result<(), String>), VmSdkError> {
-    use iota_types::{
-        account_abstraction::authenticator_function::extract_auth_fun_refs,
-        auth_context::AuthContextData,
-    };
-
     let PreparedTransaction {
         transaction,
         gas_status,

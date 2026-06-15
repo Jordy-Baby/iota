@@ -12,7 +12,7 @@ use iota_graphql_rpc_client::simple_client::SimpleClient;
 use iota_sdk_types::{ObjectId, Version};
 use iota_types::{
     object::Object,
-    transaction::{TransactionData, TransactionDataAPI},
+    transaction::{InputObjectKind, TransactionData, TransactionDataAPI},
 };
 
 use crate::{
@@ -93,7 +93,6 @@ impl GraphqlStore {
     /// store. Owned/immutable objects are fetched at their transaction
     /// versions; shared objects and packages at the latest version.
     pub async fn prefetch(&mut self, transaction: &TransactionData) -> Result<(), VmSdkError> {
-        use iota_types::transaction::InputObjectKind;
         let input_object_kinds = transaction
             .input_objects()
             .map_err(|e| StoreError::new("collect input objects", e))?;

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
-//! [`LocalVm`] — the public decode -> store -> execute -> introspect executor.
+//! [`LocalVm`] — the public store -> execute -> introspect executor.
 //!
 //! `LocalVm` owns a [`Store`] and a Move execution engine configured for the
 //! chain described by a [`ChainContext`]. Each [`LocalVm::execute`] /

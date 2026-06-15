@@ -14,7 +14,7 @@ use iota_grpc_client::Client;
 use iota_sdk_types::{ObjectId, Version};
 use iota_types::{
     object::Object,
-    transaction::{TransactionData, TransactionDataAPI},
+    transaction::{InputObjectKind, TransactionData, TransactionDataAPI},
 };
 
 use crate::{
@@ -91,7 +91,6 @@ impl GrpcStore {
         let input_object_kinds = transaction
             .input_objects()
             .map_err(|e| StoreError::new("collect input objects", e))?;
-        use iota_types::transaction::InputObjectKind;
         for kind in &input_object_kinds {
             match kind {
                 InputObjectKind::ImmOrOwnedMoveObject(objref) => {
