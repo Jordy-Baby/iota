@@ -3,10 +3,8 @@
 Run and inspect IOTA transactions against the same Move execution engine a full
 node uses — locally, with no network connection.
 
-It is built around a four-part surface:
+It is built around a three-part surface:
 
-- **Decode** — read what a transaction or signature references (objects,
-  `MoveAuthenticator`, dynamic-field IDs) without a VM or a store.
 - **Store** — hold the objects a run needs (`InMemoryStore`, or pre-fetch from a
   node via the optional `grpc` / `graphql` stores).
 - **Execute** — run a transaction through `LocalVm` in one of three modes:

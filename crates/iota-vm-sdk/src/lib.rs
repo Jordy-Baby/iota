@@ -3,16 +3,13 @@
 
 //! Local IOTA Move VM SDK.
 //!
-//! A four-part surface for running and inspecting transactions against the same
-//! Move execution engine a full node uses, with no network connection:
+//! A three-part surface for running and inspecting transactions against the
+//! same Move execution engine a full node uses, with no network connection:
 //!
-//! 1. **Decode** — static, VM-free helpers ([`decode_transaction`],
-//!    [`decode_move_authenticator`], [`auth_function_field_id`],
-//!    [`derive_field_id`]).
-//! 2. **Store** — an object store ([`Store`] trait, [`InMemoryStore`]).
-//! 3. **Execute** — the [`LocalVm`] executor running in one of three
+//! 1. **Store** — an object store ([`Store`] trait, [`InMemoryStore`]).
+//! 2. **Execute** — the [`LocalVm`] executor running in one of three
 //!    [`ExecutionMode`]s.
-//! 4. **Introspect** — the [`ExecutionResult`] / [`DecodedEvent`] outputs.
+//! 3. **Introspect** — the [`ExecutionResult`] / [`DecodedEvent`] outputs.
 //!
 //! # Features
 //!
@@ -24,7 +21,6 @@
 //! default.
 
 mod debug;
-mod decode;
 mod error;
 mod executor;
 mod store;
@@ -38,10 +34,6 @@ pub mod graphql;
 // --- SDK surface ---------------------------------------------------------
 
 pub use debug::{DebugArtifacts, DebugConfig, ProfileOutput, ProfileSink};
-pub use decode::{
-    DecodedTransaction, auth_function_field_id, decode_move_authenticator, decode_transaction,
-    derive_field_id,
-};
 pub use error::{
     DecodeError, ExecutionError, SignatureError, ValidationError, VmError, VmSdkError,
 };
