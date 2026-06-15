@@ -142,8 +142,8 @@ pub struct ExecutionResult {
     pub mock_gas_id: Option<ObjectId>,
     pub status: iota_sdk_types::ExecutionStatus,
     pub signature_status: SignatureStatus,
-    /// `true` iff [`ExecutionMode::Execute`] ran successfully and the effects
-    /// were applied back to the store.
+    /// `true` if and only if [`ExecutionMode::Execute`] ran successfully and
+    /// the effects were applied back to the store.
     pub committed: bool,
     pub debug: Option<DebugArtifacts>,
 }

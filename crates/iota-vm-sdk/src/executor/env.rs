@@ -3,10 +3,9 @@
 
 //! Per-run execution environment.
 //!
-//! [`ExecutionEnv`] holds the debug-configured Move engine, built fresh for
-//! each `execute*` call because `iota_execution::executor` bakes the profiler
-//! path in at construction. This module also owns the executor/metrics
-//! constructors and the gas-profile capture.
+//! [`ExecutionEnv`] holds the debug-configured Move engine for a single
+//! `execute*` call. This module also owns the executor/metrics constructors and
+//! the gas-profile capture.
 
 use std::sync::Arc;
 

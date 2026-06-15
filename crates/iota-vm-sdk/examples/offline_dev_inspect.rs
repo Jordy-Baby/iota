@@ -28,11 +28,11 @@ fn main() -> Result<()> {
     let tx_b64 = "AAABAAQDAAECAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgRoYXNoCmJsYWtlMmIyNTYAAQEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA6AMAAAAAAAAAypo7AAAAAAA=";
     let tx_bytes = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, tx_b64)?;
     let tx: TransactionData = bcs::from_bytes(&tx_bytes)?;
-    println!("Sender: {}", tx.sender());
+    println!("Sender:    {}", tx.sender());
 
     let result = vm.execute(tx, ExecuteOptions::dev_inspect())?;
 
-    println!("Status:    {:?}", result.effects.status());
+    println!("Status:  {:?}", result.effects.status());
     println!("Committed: {}", result.committed);
     println!("Commands:  {}", result.command_results.len());
     for (i, (mut_refs, returns)) in result.command_results.iter().enumerate() {
