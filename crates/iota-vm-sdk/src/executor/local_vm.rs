@@ -25,7 +25,7 @@ use move_core_types::language_storage::ModuleId;
 use move_trace_format::format::MoveTraceBuilder;
 
 use super::{
-    env::{ExecutionEnv, build_executor, new_bytecode_verifier_metrics, new_limits_metrics},
+    env::{ExecutionEnv, build_executor},
     prepare::{
         decode_one_event, execute_prepared, execute_with_move_authenticator, prepare_transaction,
     },
@@ -86,8 +86,10 @@ impl LocalVm {
             reference_gas_price: ctx.reference_gas_price,
             epoch_id: ctx.epoch_id,
             epoch_timestamp_ms: ctx.epoch_timestamp_ms,
-            limits_metrics: Arc::new(new_limits_metrics()),
-            bytecode_verifier_metrics: Arc::new(new_bytecode_verifier_metrics()),
+            limits_metrics: Arc::new(LimitsMetrics::new(&prometheus::Registry::new())),
+            bytecode_verifier_metrics: Arc::new(BytecodeVerifierMetrics::new(
+                &prometheus::Registry::new(),
+            )),
             store: Box::new(store),
         })
     }

@@ -200,11 +200,3 @@ fn merge_profile_dir(dir: &std::path::Path) -> Option<ProfileOutput> {
     });
     serde_json::to_vec(&merged).ok().map(ProfileOutput::Json)
 }
-
-pub(super) fn new_limits_metrics() -> LimitsMetrics {
-    LimitsMetrics::new(&prometheus::Registry::new())
-}
-
-pub(super) fn new_bytecode_verifier_metrics() -> BytecodeVerifierMetrics {
-    BytecodeVerifierMetrics::new(&prometheus::Registry::new())
-}
