@@ -29,4 +29,4 @@ version or digest that a node would reject at signing time is not detected.
 All features are off by default:
 
 - `grpc` — pre-fetch objects from a node over gRPC.
-- `graphql` — pre-fetch objects from a node over GraphQL.
+- `graphql` — pre-fetch objects from an indexer over GraphQL.
