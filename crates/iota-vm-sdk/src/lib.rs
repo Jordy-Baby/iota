@@ -32,7 +32,6 @@ pub mod grpc;
 pub mod graphql;
 
 // --- SDK surface ---------------------------------------------------------
-
 pub use debug::{DebugArtifacts, DebugConfig, ProfileOutput, ProfileSink};
 pub use error::{ExecutionError, SignatureError, StoreError, ValidationError, VmError, VmSdkError};
 pub use executor::{
