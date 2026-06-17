@@ -3,8 +3,7 @@
 
 //! Public input / output types for the [`LocalVm`](super::LocalVm) surface:
 //! the [`ChainContext`] / [`ExecuteOptions`] inputs and the
-//! [`ExecutionResult`] / [`GasEstimate`] / [`DecodedEvent`] /
-//! [`SignatureStatus`] outputs.
+//! [`ExecutionResult`] / [`DecodedEvent`] / [`SignatureStatus`] outputs.
 
 use iota_protocol_config::{Chain, ProtocolVersion};
 use iota_sdk_types::{Event, ObjectId, gas::GasCostSummary};
@@ -151,7 +150,6 @@ pub struct ExecutionResult {
     pub input_objects: Vec<Object>,
     pub output_objects: Vec<Object>,
     pub gas_summary: GasCostSummary,
-    pub gas_estimate: GasEstimate,
     pub mock_gas_id: Option<ObjectId>,
     pub status: iota_sdk_types::ExecutionStatus,
     pub signature_status: SignatureStatus,
@@ -159,31 +157,6 @@ pub struct ExecutionResult {
     /// the effects were applied back to the store.
     pub committed: bool,
     pub debug: Option<DebugArtifacts>,
-}
-
-/// Convenience summary of a run's gas ledger.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub struct GasEstimate {
-    pub computation_cost: u64,
-    pub storage_cost: u64,
-    pub storage_rebate: u64,
-    pub non_refundable_storage_fee: u64,
-    /// `computation_cost + storage_cost - storage_rebate`. The figure a gas
-    /// budget needs to cover.
-    pub net_gas_usage: i64,
-}
-
-impl GasEstimate {
-    pub(super) fn from_summary(s: &GasCostSummary) -> Self {
-        Self {
-            computation_cost: s.computation_cost,
-            storage_cost: s.storage_cost,
-            storage_rebate: s.storage_rebate,
-            non_refundable_storage_fee: s.non_refundable_storage_fee,
-            net_gas_usage: s.net_gas_usage(),
-        }
-    }
 }
 
 /// A Move event paired with its decoded payload.

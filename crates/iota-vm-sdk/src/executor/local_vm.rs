@@ -30,8 +30,7 @@ use super::{
         decode_one_event, execute_prepared, execute_with_move_authenticator, prepare_transaction,
     },
     types::{
-        ChainContext, DecodedEvent, ExecuteOptions, ExecutionMode, ExecutionResult, GasEstimate,
-        SignatureStatus,
+        ChainContext, DecodedEvent, ExecuteOptions, ExecutionMode, ExecutionResult, SignatureStatus,
     },
 };
 use crate::{
@@ -260,7 +259,6 @@ impl LocalVm {
         artifacts: Option<DebugArtifacts>,
     ) -> Result<ExecutionResult, VmSdkError> {
         let gas_summary = sim.effects.gas_cost_summary().clone();
-        let gas_estimate = GasEstimate::from_summary(&gas_summary);
         let status = sim.effects.status().clone();
 
         let succeeded = sim.effects.status().is_success();
@@ -276,7 +274,6 @@ impl LocalVm {
             input_objects: sim.input_objects.into_values().collect(),
             output_objects: sim.output_objects.into_values().collect(),
             gas_summary,
-            gas_estimate,
             mock_gas_id: sim.mock_gas_id,
             status,
             signature_status,
