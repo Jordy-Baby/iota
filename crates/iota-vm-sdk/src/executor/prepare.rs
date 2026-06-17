@@ -24,7 +24,6 @@ use iota_types::{
     dynamic_field::{self, Field},
     effects::TransactionEffectsAPI,
     gas::IotaGasStatus,
-    gas_coin::NANOS_PER_IOTA,
     layout_resolver::LayoutResolver,
     move_authenticator::MoveAuthenticator,
     object::{MoveObject, MoveObjectExt, Object},
@@ -43,11 +42,6 @@ use super::{
     types::{DecodedEvent, ExecutionMode},
 };
 use crate::error::{ExecutionError, ValidationError, VmError, VmSdkError};
-
-/// Value the VM stuffs into a mock gas coin when a transaction has no explicit
-/// gas payment. One billion IOTA in NANOs — wide enough to cover any realistic
-/// single-tx gas budget.
-const MOCK_GAS_COIN_NANOS: u64 = 1_000_000_000 * NANOS_PER_IOTA;
 
 pub(super) struct PreparedTransaction {
     transaction: TransactionData,
@@ -91,9 +85,11 @@ pub(super) fn prepare_transaction(
     let receiving_objects = build_receiving_objects(store, &receiving_object_refs)?;
 
     // Mint a one-shot mock gas coin if the transaction carries no gas payment.
+    // Fund it with the protocol's max gas budget — the most any valid budget
+    // can be, so the balance check (`gas_balance >= gas_budget`) always passes.
     let mock_gas_id = if transaction.gas().is_empty() {
         let mock_gas_object = Object::new_move(
-            MoveObject::new_gas_coin(1.into(), ObjectId::MAX, MOCK_GAS_COIN_NANOS),
+            MoveObject::new_gas_coin(1.into(), ObjectId::MAX, env.protocol_config.max_tx_gas()),
             Owner::Address(transaction.gas_data().owner),
             TransactionDigest::ZERO,
         );
@@ -211,9 +207,9 @@ pub(super) fn execute_prepared(
 /// sender's and, for a sponsored transaction, the sponsor's. A successful run
 /// implies all of them accepted. On a failed run the failure may come from any
 /// authenticator or from the transaction body, so the authenticators are
-/// re-executed on their own (they are side-effect free) to obtain an
-/// unambiguous verdict: `Err` if any authenticator rejected, `Ok` if they all
-/// passed and the body was at fault.
+/// re-executed alone for an unambiguous verdict: `Err` if any rejected, `Ok` if
+/// they all passed and the body was at fault. The re-run is sound — the
+/// authentication phase discards writes.
 pub(super) fn execute_with_move_authenticators(
     env: &ExecutionEnv,
     store: &dyn BackingStore,

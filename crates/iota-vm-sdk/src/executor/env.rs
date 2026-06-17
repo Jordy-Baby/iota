@@ -86,7 +86,6 @@ impl Drop for ExecutionEnv {
 /// Build a Move executor with no profiler.
 pub(super) fn build_executor(
     protocol_config: &ProtocolConfig,
-    _debug: &DebugConfig,
 ) -> Result<Arc<dyn Executor + Send + Sync>, VmSdkError> {
     // `silent = true`: the Move `debug::print` natives are compiled out of this
     // build (they need `move-stdlib-natives`'s `testing` feature), so a

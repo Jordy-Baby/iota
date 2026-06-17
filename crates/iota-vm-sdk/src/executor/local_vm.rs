@@ -34,7 +34,7 @@ use super::{
     },
 };
 use crate::{
-    debug::{DebugArtifacts, DebugConfig},
+    debug::DebugArtifacts,
     error::{ExecutionError, VmSdkError},
     store::{Store, StoreBackend},
 };
@@ -106,6 +106,11 @@ impl LocalVm {
     /// effects are committed to the store regardless of whether the transaction
     /// would be authorized on-chain. Use [`LocalVm::execute_signed`] when
     /// signature verification is required.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`VmSdkError`] on preparation or VM faults; a Move-level abort
+    /// is reported via [`ExecutionResult::status`], not as an error.
     pub fn execute(
         &mut self,
         tx: TransactionData,
@@ -129,14 +134,21 @@ impl LocalVm {
 
     /// Run a signed transaction, verifying signatures first.
     ///
-    /// Standard schemes are verified cryptographically before execution. Every
+    /// Standard schemes are verified cryptographically first. Every
     /// [`MoveAuthenticator`](iota_types::move_authenticator::MoveAuthenticator)
-    /// on the transaction — the sender's and, for a sponsored transaction, the
-    /// sponsor's — is verified by running its function inside the VM during
-    /// execution. When such a run fails, the authenticators are executed once
-    /// more on their own to tell an authenticator rejection apart from a
-    /// failure in the transaction body (the functions are side-effect free, so
-    /// the re-run cannot change state).
+    /// — the sender's and, for a sponsored tx, the sponsor's — is verified by
+    /// running its function in the VM. On failure the authenticators are re-run
+    /// alone to tell a rejection from a body abort.
+    ///
+    /// An authenticated run always uses full checks; `opts.mode` then only
+    /// governs whether successful effects are committed.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`VmSdkError::SignatureVerification`] for an invalid
+    /// standard-scheme signature, or another [`VmSdkError`] on preparation/VM
+    /// faults. A rejected `MoveAuthenticator` is reported via
+    /// [`ExecutionResult::signature_status`], not as an error.
     pub fn execute_signed(
         &mut self,
         signed: SenderSignedData,
@@ -199,9 +211,9 @@ impl LocalVm {
                 )?;
                 let status = match verdict {
                     Ok(()) => SignatureStatus::Verified,
-                    Err(e) => SignatureStatus::Failed(crate::error::SignatureError::new(format!(
-                        "authenticator function rejected the transaction: {e}"
-                    ))),
+                    // `SignatureError`'s `Display` already prefixes "signature
+                    // verification failed:", so carry only the cause here.
+                    Err(e) => SignatureStatus::Failed(crate::error::SignatureError::new(e)),
                 };
                 (sim, status)
             }
@@ -218,8 +230,8 @@ impl LocalVm {
         &self,
         events: &TransactionEvents,
     ) -> Vec<Result<DecodedEvent, VmSdkError>> {
-        // Build a default-config executor purely for its layout resolver.
-        let executor = match build_executor(&self.protocol_config, &DebugConfig::default()) {
+        // Build an executor purely for its layout resolver.
+        let executor = match build_executor(&self.protocol_config) {
             Ok(e) => e,
             Err(e) => return vec![Err(e)],
         };
@@ -238,6 +250,11 @@ impl LocalVm {
     /// any struct layouts from the packages in the store. Used to turn
     /// dev-inspect return values and mutable reference outputs (raw
     /// `(bytes, type)` pairs) into readable values.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`VmSdkError::Execution`] if the layout can't be resolved or
+    /// `bytes` don't deserialize against it.
     pub fn decode_value(
         &self,
         bytes: &[u8],
@@ -289,6 +306,9 @@ impl LocalVm {
     /// Apply created/mutated/deleted/wrapped changes back into the store so a
     /// subsequent run sees them.
     fn apply_effects(&mut self, sim: &SimulateTransactionResult) {
+        // `output_objects` is authoritative for what survives; then drop what
+        // was deleted or wrapped. `unwrapped_then_deleted` objects were nested,
+        // never standalone store entries, so they need no removal.
         for obj in sim.output_objects.values() {
             self.store.insert(obj.clone());
         }

@@ -126,6 +126,13 @@ impl ExecuteOptions {
         }
     }
 
+    /// Set the [`ExecutionMode`].
+    #[must_use]
+    pub fn with_mode(mut self, mode: ExecutionMode) -> Self {
+        self.mode = mode;
+        self
+    }
+
     /// Attach a [`DebugConfig`] to capture prints / profile / trace.
     #[must_use]
     pub fn with_debug(mut self, cfg: DebugConfig) -> Self {
@@ -134,28 +141,42 @@ impl ExecuteOptions {
     }
 }
 
+/// The engine's per-PTB-command result `(mutable_reference_outputs,
+/// return_values)`, aliased to disambiguate from the SDK's own
+/// [`ExecutionResult`].
+pub type CommandResult = iota_types::execution::ExecutionResult;
+
 /// The full result of a run: effects, events, per-command results, the input
 /// and output object sets, gas accounting, signature status, whether the run
 /// was committed to the store, and any captured debug artifacts.
 #[derive(Debug)]
 #[non_exhaustive]
 pub struct ExecutionResult {
+    /// The transaction effects (object changes, gas, status digest).
     pub effects: TransactionEffects,
+    /// Emitted events, if the run produced any.
     pub events: Option<TransactionEvents>,
     /// Per-PTB-command `(mutable_reference_outputs, return_values)`.
     ///
     /// Empty for `MoveAuthenticator`-signed runs: the authenticator engine
     /// entry point does not return per-command results.
-    pub command_results: Vec<iota_types::execution::ExecutionResult>,
+    pub command_results: Vec<CommandResult>,
+    /// Objects read as inputs to the run.
     pub input_objects: Vec<Object>,
+    /// Objects written by the run (created or mutated).
     pub output_objects: Vec<Object>,
+    /// Gas ledger for the run (computation / storage / rebate).
     pub gas_summary: GasCostSummary,
+    /// Id of the mock gas coin minted for a gas-less transaction, if any.
     pub mock_gas_id: Option<ObjectId>,
+    /// The Move-level execution status (success or abort).
     pub status: iota_sdk_types::ExecutionStatus,
+    /// The outcome of signature verification for the run.
     pub signature_status: SignatureStatus,
     /// `true` if and only if [`ExecutionMode::Execute`] ran successfully and
     /// the effects were applied back to the store.
     pub committed: bool,
+    /// Captured debug artifacts (profile / trace), if requested.
     pub debug: Option<DebugArtifacts>,
 }
 

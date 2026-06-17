@@ -40,11 +40,29 @@ impl GraphqlStore {
 
     /// Connect to a GraphQL endpoint (by URL) and create a store containing
     /// only the built-in framework packages.
-    pub fn connect(url: impl Into<String>) -> Self {
-        Self::new(SimpleClient::new(url))
+    ///
+    /// Returns a `Result` to mirror
+    /// [`GrpcStore::connect`](crate::grpc::GrpcStore::connect); building the
+    /// client is currently infallible.
+    pub fn connect(url: impl Into<String>) -> Result<Self, VmSdkError> {
+        Ok(Self::new(SimpleClient::new(url)))
+    }
+
+    /// Read-only access to the wrapped in-memory store, e.g. to snapshot the
+    /// objects fetched so far.
+    pub fn store(&self) -> &InMemoryStore {
+        &self.inner
     }
 
     /// Fetch the chain parameters a [`LocalVm`](crate::LocalVm) needs.
+    ///
+    /// Reports [`Chain::Unknown`](crate::Chain) — the chain identity is not
+    /// resolved here; this only affects chain-specific protocol behaviour.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`VmSdkError::Store`] if the query fails or epoch fields are
+    /// missing.
     pub async fn fetch_chain_context(&self) -> Result<ChainContext, VmSdkError> {
         let query = r#"{
             epoch {

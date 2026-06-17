@@ -72,7 +72,7 @@ async fn compare_local_vm_staking_against_test_cluster() {
 
     // Local VM: pre-fetch every referenced object over gRPC, then dev-inspect
     // offline against the same Move engine the node uses.
-    let mut store = GrpcStore::connect(&test_cluster.grpc_url()).expect("connect gRPC store");
+    let mut store = GrpcStore::connect(test_cluster.grpc_url()).expect("connect gRPC store");
     let ctx = store
         .fetch_chain_context()
         .await
