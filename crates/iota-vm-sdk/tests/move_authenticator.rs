@@ -51,6 +51,14 @@ fn b64(s: &str) -> Vec<u8> {
         .expect("base64 decode")
 }
 
+/// The [`ChainContext`] described by a fixture.
+fn chain_context(f: &Fixture) -> ChainContext {
+    ChainContext::new(ProtocolVersion::new(f.protocol_version), Chain::Unknown)
+        .with_reference_gas_price(f.reference_gas_price)
+        .with_epoch_id(f.epoch_id)
+        .with_epoch_timestamp_ms(f.epoch_timestamp_ms)
+}
+
 /// The fixture's `MoveAuthenticator` signature.
 fn move_authenticator_sig(f: &Fixture) -> GenericSignature {
     f.signatures
@@ -90,14 +98,7 @@ fn replay(name: &str) -> (iota_sdk_types::ExecutionStatus, SignatureStatus) {
         .collect();
     let signed = SenderSignedData::new(tx, sigs);
 
-    let ctx = ChainContext::new(
-        ProtocolVersion::new(f.protocol_version),
-        f.reference_gas_price,
-        f.epoch_id,
-        f.epoch_timestamp_ms,
-        Chain::Unknown,
-    );
-    let mut vm = LocalVm::new(ctx, store).expect("build LocalVm");
+    let mut vm = LocalVm::new(chain_context(&f), store).expect("build LocalVm");
 
     let result = vm
         .execute_signed(signed, ExecuteOptions::dev_inspect())
@@ -142,14 +143,7 @@ fn move_authenticator_accepts_but_aborting_body_stays_verified() {
         let object: Object = bcs::from_bytes(&b64(&obj.bcs_b64)).expect("decode object");
         store.insert(object);
     }
-    let ctx = ChainContext::new(
-        ProtocolVersion::new(f.protocol_version),
-        f.reference_gas_price,
-        f.epoch_id,
-        f.epoch_timestamp_ms,
-        Chain::Unknown,
-    );
-    let mut vm = LocalVm::new(ctx, store).expect("build LocalVm");
+    let mut vm = LocalVm::new(chain_context(&f), store).expect("build LocalVm");
 
     // First run: the free-access authenticator accepts and `add_field` succeeds.
     let first = vm
@@ -234,14 +228,7 @@ fn sponsor_move_authenticator_is_executed_and_can_reject() {
         store.insert(object);
     }
 
-    let ctx = ChainContext::new(
-        ProtocolVersion::new(sender_fx.protocol_version),
-        sender_fx.reference_gas_price,
-        sender_fx.epoch_id,
-        sender_fx.epoch_timestamp_ms,
-        Chain::Unknown,
-    );
-    let mut vm = LocalVm::new(ctx, store).expect("build LocalVm");
+    let mut vm = LocalVm::new(chain_context(&sender_fx), store).expect("build LocalVm");
 
     let result = vm
         .execute_signed(signed, ExecuteOptions::dev_inspect())

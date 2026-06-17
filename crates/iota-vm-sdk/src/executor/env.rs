@@ -179,8 +179,10 @@ fn merge_profile_dir(dir: &std::path::Path) -> Option<ProfileOutput> {
             for profile in profiles.iter_mut() {
                 if let Some(events) = profile.get_mut("events").and_then(|v| v.as_array_mut()) {
                     for ev in events.iter_mut() {
-                        if let Some(frame) =
-                            ev.get("frame").and_then(|v| v.as_u64()).map(|i| i as usize)
+                        if let Some(frame) = ev
+                            .get("frame")
+                            .and_then(|v| v.as_u64())
+                            .and_then(|i| usize::try_from(i).ok())
                         {
                             if let Some(new) = index_map.get(frame) {
                                 ev["frame"] = serde_json::json!(new);

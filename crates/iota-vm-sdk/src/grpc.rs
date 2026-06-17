@@ -99,6 +99,12 @@ impl GrpcStore {
     /// Fetch every object the transaction references and insert it into the
     /// store. Owned/immutable objects are fetched at their transaction
     /// versions; shared objects and packages at the latest version.
+    ///
+    /// This covers the transaction body only. A `MoveAuthenticator`-signed run
+    /// also needs the authenticator's input objects and each account's
+    /// `AuthenticatorFunctionRefV1` field present — run
+    /// [`prefetch_dynamic_fields`](Self::prefetch_dynamic_fields) (or insert
+    /// them manually) before executing such a transaction.
     pub async fn prefetch(&mut self, transaction: &TransactionData) -> Result<(), VmSdkError> {
         let mut refs: Vec<(ObjectId, Option<Version>)> = Vec::new();
         let input_object_kinds = transaction

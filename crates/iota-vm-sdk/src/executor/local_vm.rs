@@ -140,8 +140,11 @@ impl LocalVm {
     /// running its function in the VM. On failure the authenticators are re-run
     /// alone to tell a rejection from a body abort.
     ///
-    /// An authenticated run always uses full checks; `opts.mode` then only
-    /// governs whether successful effects are committed.
+    /// `opts.mode` governs input-check relaxation
+    /// ([`ExecutionMode::DevInspect`]) and commit
+    /// ([`ExecutionMode::Execute`]) as for [`execute`](Self::execute),
+    /// but the authenticators and transaction body always execute under full
+    /// (non-dev-inspect) VM semantics.
     ///
     /// # Errors
     ///

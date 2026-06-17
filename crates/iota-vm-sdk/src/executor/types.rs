@@ -39,22 +39,38 @@ pub struct ChainContext {
 }
 
 impl ChainContext {
-    /// Build a [`ChainContext`] from its parts. The three `u64` arguments are,
-    /// in order, `reference_gas_price`, `epoch_id`, and `epoch_timestamp_ms`.
-    pub fn new(
-        protocol_version: ProtocolVersion,
-        reference_gas_price: u64,
-        epoch_id: u64,
-        epoch_timestamp_ms: u64,
-        chain: Chain,
-    ) -> Self {
+    /// Start from the protocol version and chain. The epoch fields default to
+    /// `0`; set them by name with the `with_*` methods to avoid transposing the
+    /// several `u64` parameters.
+    pub fn new(protocol_version: ProtocolVersion, chain: Chain) -> Self {
         Self {
             protocol_version,
-            reference_gas_price,
-            epoch_id,
-            epoch_timestamp_ms,
+            reference_gas_price: 0,
+            epoch_id: 0,
+            epoch_timestamp_ms: 0,
             chain,
         }
+    }
+
+    /// Set the reference gas price for the epoch, in NANOS.
+    #[must_use]
+    pub fn with_reference_gas_price(mut self, reference_gas_price: u64) -> Self {
+        self.reference_gas_price = reference_gas_price;
+        self
+    }
+
+    /// Set the epoch the transaction runs in.
+    #[must_use]
+    pub fn with_epoch_id(mut self, epoch_id: u64) -> Self {
+        self.epoch_id = epoch_id;
+        self
+    }
+
+    /// Set the epoch start timestamp in milliseconds (the VM clock).
+    #[must_use]
+    pub fn with_epoch_timestamp_ms(mut self, epoch_timestamp_ms: u64) -> Self {
+        self.epoch_timestamp_ms = epoch_timestamp_ms;
+        self
     }
 }
 
@@ -133,7 +149,8 @@ impl ExecuteOptions {
         self
     }
 
-    /// Attach a [`DebugConfig`] to capture prints / profile / trace.
+    /// Attach a [`DebugConfig`] to capture a gas profile and/or an execution
+    /// trace.
     #[must_use]
     pub fn with_debug(mut self, cfg: DebugConfig) -> Self {
         self.debug = cfg;
