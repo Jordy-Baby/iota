@@ -101,6 +101,12 @@ impl LocalVm {
     }
 
     /// Run an unsigned transaction.
+    ///
+    /// No signatures are checked: the result reports
+    /// [`SignatureStatus::NotChecked`], and with [`ExecutionMode::Execute`] the
+    /// effects are committed to the store regardless of whether the transaction
+    /// would be authorized on-chain. Use [`LocalVm::execute_signed`] when
+    /// signature verification is required.
     pub fn execute(
         &mut self,
         tx: TransactionData,
