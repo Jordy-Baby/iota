@@ -3,9 +3,10 @@
 
 //! Per-run execution environment.
 //!
-//! [`ExecutionEnv`] holds the debug-configured Move engine for a single
-//! `execute*` call. This module also owns the executor/metrics constructors and
-//! the gas-profile capture.
+//! A fresh [`ExecutionEnv`] is built for each [`LocalVm`] run, holding the
+//! debug-configured Move engine for that one `execute*` / `execute_signed` call
+//! (a single `LocalVm` may run many). This module also owns the executor
+//! construction and the gas-profile capture.
 
 use std::sync::Arc;
 
