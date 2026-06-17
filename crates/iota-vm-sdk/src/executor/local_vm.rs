@@ -27,7 +27,7 @@ use move_trace_format::format::MoveTraceBuilder;
 use super::{
     env::{ExecutionEnv, build_executor},
     prepare::{
-        decode_one_event, execute_prepared, execute_with_move_authenticator, prepare_transaction,
+        decode_one_event, execute_prepared, execute_with_move_authenticators, prepare_transaction,
     },
     types::{
         ChainContext, DecodedEvent, ExecuteOptions, ExecutionMode, ExecutionResult, SignatureStatus,
@@ -129,13 +129,14 @@ impl LocalVm {
 
     /// Run a signed transaction, verifying signatures first.
     ///
-    /// Standard schemes are verified cryptographically before execution; a
+    /// Standard schemes are verified cryptographically before execution. Every
     /// [`MoveAuthenticator`](iota_types::move_authenticator::MoveAuthenticator)
-    /// is verified by running its function inside the VM during execution.
-    /// When an authenticator-signed run fails, the authenticator function is
-    /// executed once more on its own to tell an authenticator rejection apart
-    /// from a failure in the transaction body (the function is side-effect
-    /// free, so the re-run cannot change state).
+    /// on the transaction — the sender's and, for a sponsored transaction, the
+    /// sponsor's — is verified by running its function inside the VM during
+    /// execution. When such a run fails, the authenticators are executed once
+    /// more on their own to tell an authenticator rejection apart from a
+    /// failure in the transaction body (the functions are side-effect free, so
+    /// the re-run cannot change state).
     pub fn execute_signed(
         &mut self,
         signed: SenderSignedData,
@@ -147,7 +148,10 @@ impl LocalVm {
         verify_sender_signed_data_message_signatures(&signed, &verify_params)
             .map_err(VmSdkError::SignatureVerification)?;
 
-        let move_authenticator = signed.sender_move_authenticator().cloned();
+        // All `MoveAuthenticator`s on the transaction — the sender's and, for a
+        // sponsored transaction, the sponsor's — must be verified.
+        let move_authenticators: Vec<_> =
+            signed.move_authenticators().into_iter().cloned().collect();
         // The auth digests must be computed from the signed data before it is
         // consumed; the `MoveAuthenticator` execution path needs them in its
         // `AuthContextData`.
@@ -156,9 +160,10 @@ impl LocalVm {
             .map_err(VmSdkError::SignatureVerification)?;
         let transaction = signed.into_inner().intent_message.value;
 
-        let authenticator_gas_budget = match &move_authenticator {
-            Some(_) => self.protocol_config.max_auth_gas(),
-            None => 0,
+        let authenticator_gas_budget = if move_authenticators.is_empty() {
+            0
+        } else {
+            self.protocol_config.max_auth_gas()
         };
 
         let prepared = {
@@ -175,31 +180,30 @@ impl LocalVm {
 
         let (sim, signature_status) = {
             let backend = StoreBackend::new(self.store.as_ref());
-            match move_authenticator {
-                Some(authenticator) => {
-                    let (sim, verdict) = execute_with_move_authenticator(
-                        &env,
-                        &backend,
-                        prepared,
-                        authenticator,
-                        auth_digests,
-                        authenticator_gas_budget,
-                        &mut trace_builder,
-                    )?;
-                    let status = match verdict {
-                        Ok(()) => SignatureStatus::Verified,
-                        Err(e) => SignatureStatus::Failed(crate::error::SignatureError::new(
-                            format!("authenticator function rejected the transaction: {e}"),
-                        )),
-                    };
-                    (sim, status)
-                }
+            if move_authenticators.is_empty() {
                 // Standard schemes were verified cryptographically above; the
                 // run's outcome cannot retroactively invalidate them.
-                None => (
+                (
                     execute_prepared(&env, &backend, prepared, opts.mode)?,
                     SignatureStatus::Verified,
-                ),
+                )
+            } else {
+                let (sim, verdict) = execute_with_move_authenticators(
+                    &env,
+                    &backend,
+                    prepared,
+                    move_authenticators,
+                    auth_digests,
+                    authenticator_gas_budget,
+                    &mut trace_builder,
+                )?;
+                let status = match verdict {
+                    Ok(()) => SignatureStatus::Verified,
+                    Err(e) => SignatureStatus::Failed(crate::error::SignatureError::new(format!(
+                        "authenticator function rejected the transaction: {e}"
+                    ))),
+                };
+                (sim, status)
             }
         };
         let artifacts = env.collect_artifacts(trace_builder);

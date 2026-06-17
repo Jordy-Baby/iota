@@ -203,18 +203,22 @@ pub(super) fn execute_prepared(
     })
 }
 
-/// Run a `MoveAuthenticator`-signed transaction and return the simulation
-/// together with the authenticator's verdict.
+/// Run a transaction whose sender and/or sponsor authorize via a
+/// `MoveAuthenticator`, returning the simulation together with an aggregate
+/// verdict over all authenticators.
 ///
-/// A successful run implies the authenticator accepted. On a failed run the
-/// failure may come from either the authenticator or the transaction body, so
-/// the authenticator function is re-executed on its own (it is side-effect
-/// free) to obtain an unambiguous verdict.
-pub(super) fn execute_with_move_authenticator(
+/// Every `MoveAuthenticator` on the transaction is resolved and executed — the
+/// sender's and, for a sponsored transaction, the sponsor's. A successful run
+/// implies all of them accepted. On a failed run the failure may come from any
+/// authenticator or from the transaction body, so the authenticators are
+/// re-executed on their own (they are side-effect free) to obtain an
+/// unambiguous verdict: `Err` if any authenticator rejected, `Ok` if they all
+/// passed and the body was at fault.
+pub(super) fn execute_with_move_authenticators(
     env: &ExecutionEnv,
     store: &dyn BackingStore,
     prepared: PreparedTransaction,
-    authenticator: MoveAuthenticator,
+    authenticators: Vec<MoveAuthenticator>,
     auth_digests: (
         iota_types::digests::Digest,
         Option<iota_types::digests::Digest>,
@@ -229,39 +233,35 @@ pub(super) fn execute_with_move_authenticator(
         mock_gas_id,
     } = prepared;
 
-    // Resolve the authenticator's input objects (separate from tx inputs).
-    let auth_input_object_kinds = authenticator.input_objects();
-    let (_, auth_input_objects) = build_input_objects(store, &auth_input_object_kinds)?;
-
-    // Union of transaction + authenticator inputs for the main execution.
+    // Resolve each authenticator's input objects and function ref, unioning
+    // every authenticator's inputs into the transaction's checked inputs.
     let mut union_inputs = checked_input_objects.into_inner();
-    for obj in auth_input_objects.iter() {
-        if union_inputs.find_object_id_mut(obj.id()).is_none() {
-            union_inputs.push(obj.clone());
+    let mut prepared_auths = Vec::with_capacity(authenticators.len());
+    for authenticator in authenticators {
+        let auth_input_object_kinds = authenticator.input_objects();
+        let (_, auth_input_objects) = build_input_objects(store, &auth_input_object_kinds)?;
+        for obj in auth_input_objects.iter() {
+            if union_inputs.find_object_id_mut(obj.id()).is_none() {
+                union_inputs.push(obj.clone());
+            }
         }
+        let fn_ref = resolve_authenticator_function_ref(store, &authenticator)?;
+        prepared_auths.push((authenticator, fn_ref, auth_input_objects));
     }
     let union_checked = CheckedInputObjects::new_with_checked_transaction_inputs(union_inputs);
-    // `CheckedInputObjects` is not `Clone`; rebuild it for each engine call.
-    let auth_checked =
-        || CheckedInputObjects::new_with_checked_transaction_inputs(auth_input_objects.clone());
 
-    let authenticator_fn_ref = resolve_authenticator_function_ref(store, &authenticator)?;
     let tx_data_bytes =
         bcs::to_bytes(&transaction).expect("TransactionData serialization cannot fail");
-
     let (kind, signer, gas_data) = transaction.execution_parts();
 
-    // Build the auth context: map the authenticator's address to its function
-    // ref for the sender (and sponsor, if sponsored).
+    // Map each signer (sender / sponsor) to its authenticator function ref.
     let (sender_auth_digest, sponsor_auth_digest) = auth_digests;
-    let authenticator_address = authenticator.address().ok();
     let (sender_authenticator_function_ref, sponsor_authenticator_function_ref) =
         extract_auth_fun_refs(signer, gas_data.owner, |address| {
-            if authenticator_address == Some(address) {
-                Some(authenticator_fn_ref.authenticator_function_ref.clone())
-            } else {
-                None
-            }
+            prepared_auths
+                .iter()
+                .find(|(a, _, _)| a.address().ok() == Some(address))
+                .map(|(_, fn_ref, _)| fn_ref.authenticator_function_ref.clone())
         });
     let auth_context_data = AuthContextData {
         transaction_data_bytes: tx_data_bytes,
@@ -269,6 +269,21 @@ pub(super) fn execute_with_move_authenticator(
         sponsor_auth_digest,
         sender_authenticator_function_ref,
         sponsor_authenticator_function_ref,
+    };
+
+    // `CheckedInputObjects` is not `Clone`; rebuild the per-authenticator inputs
+    // (as `CheckedInputObjects`) for each engine call.
+    let exec_authenticators = || {
+        prepared_auths
+            .iter()
+            .map(|(a, fn_ref, inputs)| {
+                (
+                    a.clone(),
+                    fn_ref.clone(),
+                    CheckedInputObjects::new_with_checked_transaction_inputs(inputs.clone()),
+                )
+            })
+            .collect::<Vec<_>>()
     };
 
     let (inner_temp_store, _, effects, execution_result) = env
@@ -283,11 +298,7 @@ pub(super) fn execute_with_move_authenticator(
             env.epoch_timestamp_ms,
             gas_data.clone(),
             gas_status,
-            vec![(
-                authenticator.clone(),
-                authenticator_fn_ref.clone(),
-                auth_checked(),
-            )],
+            exec_authenticators(),
             union_checked,
             kind.clone(),
             signer,
@@ -299,11 +310,11 @@ pub(super) fn execute_with_move_authenticator(
     let verdict = if effects.status().is_success() {
         Ok(())
     } else {
-        // The combined run failed; re-run the authenticator alone to learn
-        // whether it was the authenticator or the transaction body that failed.
-        // Meter it with the authenticator budget the engine's signing phase
+        // The combined run failed; re-run the authenticators alone to learn
+        // whether an authenticator rejected the transaction or the body failed.
+        // Meter them with the authenticator budget the engine's signing phase
         // uses (`max_auth_gas`), not the transaction budget — otherwise a tx
-        // budget smaller than the authenticator's needs would make the re-run
+        // budget smaller than the authenticators' needs would make the re-run
         // run out of gas and look like a rejection.
         let verdict_gas_status = IotaGasStatus::new(
             authenticator_gas_budget,
@@ -312,6 +323,28 @@ pub(super) fn execute_with_move_authenticator(
             &env.protocol_config,
         )
         .map_err(|e| ValidationError::new("authenticator verdict gas status", e))?;
+        // `authenticate_transaction` takes the inner `AuthenticatorFunctionRef`
+        // and the union of all authenticator input objects.
+        let verdict_authenticators = prepared_auths
+            .iter()
+            .map(|(a, fn_ref, inputs)| {
+                (
+                    a.clone(),
+                    fn_ref.authenticator_function_ref.clone(),
+                    CheckedInputObjects::new_with_checked_transaction_inputs(inputs.clone()),
+                )
+            })
+            .collect::<Vec<_>>();
+        let per_auth_checked: Vec<CheckedInputObjects> = prepared_auths
+            .iter()
+            .map(|(_, _, inputs)| {
+                CheckedInputObjects::new_with_checked_transaction_inputs(inputs.clone())
+            })
+            .collect();
+        let per_auth_checked_refs: Vec<&CheckedInputObjects> = per_auth_checked.iter().collect();
+        let aggregated_auth_inputs =
+            iota_transaction_checks::aggregate_authenticator_input_objects(&per_auth_checked_refs)
+                .map_err(|e| ValidationError::new("aggregate authenticator inputs", e))?;
         env.executor
             .authenticate_transaction(
                 store,
@@ -321,12 +354,8 @@ pub(super) fn execute_with_move_authenticator(
                 env.epoch_timestamp_ms,
                 gas_data,
                 verdict_gas_status,
-                vec![(
-                    authenticator,
-                    authenticator_fn_ref.authenticator_function_ref,
-                    auth_checked(),
-                )],
-                auth_checked(),
+                verdict_authenticators,
+                aggregated_auth_inputs,
                 kind,
                 signer,
                 transaction.digest(),
