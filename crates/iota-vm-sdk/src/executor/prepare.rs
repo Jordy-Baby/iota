@@ -37,11 +37,13 @@ use iota_types::{
 use move_core_types::annotated_value::{MoveDatatypeLayout, MoveTypeLayout, MoveValue};
 use move_trace_format::format::MoveTraceBuilder;
 
-use super::{
-    env::ExecutionEnv,
-    types::{DecodedEvent, ExecutionMode},
+use crate::{
+    error::{ExecutionError, ValidationError, VmError, VmSdkError},
+    executor::{
+        env::ExecutionEnv,
+        types::{DecodedEvent, ExecutionMode},
+    },
 };
-use crate::error::{ExecutionError, ValidationError, VmError, VmSdkError};
 
 pub(super) struct PreparedTransaction {
     transaction: TransactionData,

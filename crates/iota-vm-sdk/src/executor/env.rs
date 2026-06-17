@@ -15,14 +15,13 @@ use iota_protocol_config::ProtocolConfig;
 use iota_types::metrics::{BytecodeVerifierMetrics, LimitsMetrics};
 use move_trace_format::format::MoveTraceBuilder;
 
-use super::local_vm::LocalVm;
 use crate::{
     debug::{DebugArtifacts, DebugConfig, ProfileOutput, ProfileSink},
     error::{VmError, VmSdkError},
+    executor::local_vm::LocalVm,
 };
 
-/// Per-run engine + debug wiring, built fresh for each `execute*` call because
-/// `iota_execution::executor` bakes the profiler path in at construction.
+/// The Move engine and debug wiring for a single `execute*` call.
 pub(super) struct ExecutionEnv {
     pub(super) protocol_config: ProtocolConfig,
     pub(super) reference_gas_price: u64,
@@ -37,6 +36,8 @@ pub(super) struct ExecutionEnv {
 
 impl ExecutionEnv {
     pub(super) fn new(vm: &LocalVm, debug: &DebugConfig) -> Result<Self, VmSdkError> {
+        // Built per run because `iota_execution::executor` bakes the profiler
+        // path in at construction, so it cannot be shared across runs.
         let (executor, capture_profile_dir) =
             build_executor_with_profile(&vm.protocol_config, debug)?;
 

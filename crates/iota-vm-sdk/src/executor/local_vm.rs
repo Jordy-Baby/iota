@@ -24,18 +24,20 @@ use move_bytecode_utils::{layout::TypeLayoutBuilder, module_cache::GetModule};
 use move_core_types::language_storage::ModuleId;
 use move_trace_format::format::MoveTraceBuilder;
 
-use super::{
-    env::{ExecutionEnv, build_executor},
-    prepare::{
-        decode_one_event, execute_prepared, execute_with_move_authenticators, prepare_transaction,
-    },
-    types::{
-        ChainContext, DecodedEvent, ExecuteOptions, ExecutionMode, ExecutionResult, SignatureStatus,
-    },
-};
 use crate::{
     debug::DebugArtifacts,
     error::{ExecutionError, VmSdkError},
+    executor::{
+        env::{ExecutionEnv, build_executor},
+        prepare::{
+            decode_one_event, execute_prepared, execute_with_move_authenticators,
+            prepare_transaction,
+        },
+        types::{
+            ChainContext, DecodedEvent, ExecuteOptions, ExecutionMode, ExecutionResult,
+            SignatureStatus,
+        },
+    },
     store::{Store, StoreBackend},
 };
 
