@@ -12,8 +12,8 @@ default = []
 grpc = ["dep:tonic", "dep:iota-grpc-client", "dep:iota-grpc-types", "dep:tokio"]
 graphql = [
   "dep:chrono",
-  "dep:reqwest",
   "dep:iota-graphql-rpc-client",
+  "dep:reqwest",
   "dep:tokio",
 ]
 
