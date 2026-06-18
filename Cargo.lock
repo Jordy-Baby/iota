@@ -8170,7 +8170,6 @@ dependencies = [
  "iota-config",
  "iota-execution",
  "iota-framework",
- "iota-graphql-rpc-client",
  "iota-json-rpc-types",
  "iota-protocol-config",
  "iota-sdk-graphql-client",
