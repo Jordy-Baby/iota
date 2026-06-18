@@ -123,14 +123,15 @@ impl LocalVm {
             let backend = StoreBackend::new(self.store.as_ref());
             prepare_transaction(&env, &backend, tx, opts.mode, 0)?
         };
-        // The plain dev_inspect path does not accept a trace builder (only the
-        // authenticator path does), so no trace is captured here.
-        let trace_builder = env.trace_enabled().then(MoveTraceBuilder::new);
         let sim = {
             let backend = StoreBackend::new(self.store.as_ref());
             execute_prepared(&env, &backend, prepared, opts.mode)?
         };
-        let artifacts = env.collect_artifacts(trace_builder);
+        // The dev-inspect engine entry point does not accept a `MoveTraceBuilder`
+        // (only the authenticator path does), so this path cannot capture a
+        // trace. Report its absence honestly as `None` rather than an empty
+        // trace — see `DebugConfig::with_trace`.
+        let artifacts = env.collect_artifacts(None);
         self.finish(sim, opts.mode, SignatureStatus::NotChecked, artifacts)
     }
 
@@ -200,18 +201,22 @@ impl LocalVm {
                 authenticator_gas_budget,
             )?
         };
-        let mut trace_builder = env.trace_enabled().then(MoveTraceBuilder::new);
-
-        let (sim, signature_status) = {
+        let (sim, signature_status, trace_builder) = {
             let backend = StoreBackend::new(self.store.as_ref());
             if move_authenticators.is_empty() {
                 // Standard schemes were verified cryptographically above; the
-                // run's outcome cannot retroactively invalidate them.
+                // run's outcome cannot retroactively invalidate them. Like
+                // `execute`, this runs through the dev-inspect entry point,
+                // which captures no trace.
                 (
                     execute_prepared(&env, &backend, prepared, opts.mode)?,
                     SignatureStatus::Verified,
+                    None,
                 )
             } else {
+                // Only the authenticator path threads a `MoveTraceBuilder`
+                // through the engine, so a trace is built only here.
+                let mut trace_builder = env.trace_enabled().then(MoveTraceBuilder::new);
                 let (sim, verdict) = execute_with_move_authenticators(
                     &env,
                     &backend,
@@ -227,7 +232,7 @@ impl LocalVm {
                     // verification failed:", so carry only the cause here.
                     Err(e) => SignatureStatus::Failed(crate::error::SignatureError::new(e)),
                 };
-                (sim, status)
+                (sim, status, trace_builder)
             }
         };
         let artifacts = env.collect_artifacts(trace_builder);

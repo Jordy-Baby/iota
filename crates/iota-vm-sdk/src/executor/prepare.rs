@@ -103,6 +103,8 @@ pub(super) fn prepare_transaction(
         None
     };
 
+    // Offline default: an empty deny-list. A live validator may be configured
+    // with denied addresses/packages, so this check will not match a real chain.
     let deny_config = iota_config::transaction_deny_config::TransactionDenyConfig::default();
     let receiving_object_refs = transaction.receiving_objects();
     iota_transaction_checks::deny::check_transaction_for_validation(
@@ -132,6 +134,8 @@ pub(super) fn prepare_transaction(
         .map_err(|e| ValidationError::new("gas status", e))?;
         (gas_status, checked_input_objects)
     } else {
+        // Offline default: the verifier-signing limits may differ from those a
+        // live validator enforces, so this check will not match a real chain.
         let verifier_signing_config =
             iota_config::verifier_signing_config::VerifierSigningConfig::default();
         iota_transaction_checks::check_transaction_input(
@@ -248,8 +252,8 @@ pub(super) fn execute_with_move_authenticators(
     }
     let union_checked = CheckedInputObjects::new_with_checked_transaction_inputs(union_inputs);
 
-    let tx_data_bytes =
-        bcs::to_bytes(&transaction).expect("TransactionData serialization cannot fail");
+    let tx_data_bytes = bcs::to_bytes(&transaction)
+        .map_err(|e| VmError::new(format!("serialize transaction data: {e}")))?;
     let (kind, signer, gas_data) = transaction.execution_parts();
 
     // Map each signer (sender / sponsor) to its authenticator function ref.

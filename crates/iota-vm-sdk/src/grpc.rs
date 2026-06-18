@@ -39,6 +39,7 @@ use crate::{
 pub struct GrpcStore {
     inner: Arc<Mutex<InMemoryStore>>,
     client: Client,
+    last_fetch_error: Arc<Mutex<Option<String>>>,
 }
 
 impl GrpcStore {
@@ -48,6 +49,7 @@ impl GrpcStore {
         Self {
             inner: Arc::new(Mutex::new(InMemoryStore::with_framework())),
             client,
+            last_fetch_error: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -243,12 +245,35 @@ impl GrpcStore {
         Ok(())
     }
 
+    /// The most recent on-demand fetch failure, if any.
+    ///
+    /// The synchronous [`Store`] surface cannot return an error from a cache
+    /// miss, so a failed on-demand fetch collapses to "object absent" and later
+    /// surfaces as
+    /// [`VmSdkError::MissingObject`](crate::VmSdkError::MissingObject).
+    /// When a run fails that way, check this to tell a transient transport or
+    /// decode failure apart from a genuinely missing object. Shared across
+    /// clones; overwritten by each failing fetch.
+    pub fn last_fetch_error(&self) -> Option<String> {
+        self.last_fetch_error
+            .lock()
+            .expect("error lock poisoned")
+            .clone()
+    }
+
     /// Fetch `refs` synchronously from within the executor by blocking on the
     /// client. A fetch error collapses to an empty result, leaving the object
-    /// absent so the VM treats it as missing. Must run inside a multi-threaded
-    /// Tokio runtime.
+    /// absent so the VM treats it as missing, but is stashed in
+    /// [`last_fetch_error`](Self::last_fetch_error) first. Must run inside a
+    /// multi-threaded Tokio runtime.
     fn fetch_blocking(&self, refs: &[(ObjectId, Option<Version>)]) -> Vec<Object> {
-        block_in_place(|| Handle::current().block_on(self.fetch_objects(refs))).unwrap_or_default()
+        match block_in_place(|| Handle::current().block_on(self.fetch_objects(refs))) {
+            Ok(objects) => objects,
+            Err(e) => {
+                *self.last_fetch_error.lock().expect("error lock poisoned") = Some(e.to_string());
+                Vec::new()
+            }
+        }
     }
 }
 
