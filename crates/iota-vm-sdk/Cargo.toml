@@ -10,7 +10,12 @@ description = "Local IOTA Move VM SDK: decode, store, execute and introspect tra
 [features]
 default = []
 grpc = ["dep:tonic", "dep:iota-grpc-client", "dep:iota-grpc-types", "dep:tokio"]
-graphql = ["dep:chrono", "dep:reqwest", "dep:iota-graphql-rpc-client", "dep:tokio"]
+graphql = [
+  "dep:chrono",
+  "dep:reqwest",
+  "dep:iota-graphql-rpc-client",
+  "dep:tokio",
+]
 
 [dependencies]
 # external dependencies
