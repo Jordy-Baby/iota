@@ -9,8 +9,8 @@ description = "Local IOTA Move VM SDK: decode, store, execute and introspect tra
 
 [features]
 default = []
-grpc = ["dep:tonic", "dep:iota-grpc-client", "dep:iota-grpc-types"]
-graphql = ["dep:chrono", "dep:reqwest", "dep:iota-graphql-rpc-client"]
+grpc = ["dep:tonic", "dep:iota-grpc-client", "dep:iota-grpc-types", "dep:tokio"]
+graphql = ["dep:chrono", "dep:reqwest", "dep:iota-graphql-rpc-client", "dep:tokio"]
 
 [dependencies]
 # external dependencies
@@ -22,6 +22,7 @@ prometheus.workspace = true
 reqwest = { workspace = true, optional = true }
 serde_json.workspace = true
 thiserror.workspace = true
+tokio = { workspace = true, optional = true, features = ["rt", "rt-multi-thread"] }
 tonic = { workspace = true, optional = true }
 
 # internal dependencies

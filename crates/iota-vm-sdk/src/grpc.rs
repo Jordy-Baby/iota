@@ -1,14 +1,22 @@
 // Copyright (c) 2026 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
-//! gRPC-backed store population (`feature = "grpc"`, native only).
+//! gRPC-backed store (`feature = "grpc"`, native only).
 //!
-//! [`GrpcStore`] wraps an [`InMemoryStore`] and a gRPC [`Client`]. Object
-//! fetching is async and confined to this module: callers `prefetch` the
-//! objects a transaction references (and the [`ChainContext`]) up front, then
-//! hand the populated store to a [`LocalVm`](crate::LocalVm). Because the
-//! resulting store is a plain synchronous [`Store`], the executor itself never
-//! does network I/O.
+//! [`GrpcStore`] wraps an [`InMemoryStore`] cache and a gRPC [`Client`]. The
+//! [`Store`] trait the executor uses is synchronous, but the Move VM resolves
+//! objects on demand mid-execution, so a cache miss is served by blocking on
+//! the client to fetch that object, then caching it. Only the objects a run
+//! actually touches are fetched.
+//! [`fetch_chain_context`](GrpcStore::fetch_chain_context) still runs up front,
+//! and callers may [`prefetch`](GrpcStore::prefetch) to warm the cache, but
+//! neither is required for correctness.
+//!
+//! On-demand fetching blocks the executor thread on async I/O via
+//! [`block_in_place`], so [`LocalVm::execute`](crate::LocalVm::execute) must
+//! run inside a multi-threaded Tokio runtime (e.g. `#[tokio::main]`).
+
+use std::sync::{Arc, Mutex};
 
 use iota_grpc_client::Client;
 use iota_sdk_types::{ObjectId, Version};
@@ -16,6 +24,7 @@ use iota_types::{
     object::Object,
     transaction::{InputObjectKind, TransactionData, TransactionDataAPI},
 };
+use tokio::{runtime::Handle, task::block_in_place};
 
 use crate::{
     error::{StoreError, VmSdkError},
@@ -23,10 +32,12 @@ use crate::{
     store::{InMemoryStore, Store},
 };
 
-/// A [`Store`] populated from a remote node over gRPC.
+/// A [`Store`] backed by a remote node over gRPC, resolving objects on demand.
+///
+/// Clones share the same cache and client.
 #[derive(Clone)]
 pub struct GrpcStore {
-    inner: InMemoryStore,
+    inner: Arc<Mutex<InMemoryStore>>,
     client: Client,
 }
 
@@ -35,7 +46,7 @@ impl GrpcStore {
     /// packages already loaded so Move calls resolve.
     pub fn new(client: Client) -> Self {
         Self {
-            inner: InMemoryStore::with_framework(),
+            inner: Arc::new(Mutex::new(InMemoryStore::with_framework())),
             client,
         }
     }
@@ -52,10 +63,10 @@ impl GrpcStore {
         Ok(Self::new(client))
     }
 
-    /// Read-only access to the wrapped in-memory store, e.g. to snapshot the
-    /// objects fetched so far.
-    pub fn store(&self) -> &InMemoryStore {
-        &self.inner
+    /// A snapshot clone of the objects cached so far (framework packages plus
+    /// anything fetched on demand or pre-fetched).
+    pub fn store(&self) -> InMemoryStore {
+        self.inner.lock().expect("store lock poisoned").clone()
     }
 
     /// Fetch the chain parameters a [`LocalVm`](crate::LocalVm) needs.
@@ -97,14 +108,13 @@ impl GrpcStore {
     }
 
     /// Fetch every object the transaction references and insert it into the
-    /// store. Owned/immutable objects are fetched at their transaction
-    /// versions; shared objects and packages at the latest version.
+    /// store in one batched request. Owned/immutable objects are fetched at
+    /// their transaction versions; shared objects and packages at the latest
+    /// version.
     ///
-    /// This covers the transaction body only. A `MoveAuthenticator`-signed run
-    /// also needs the authenticator's input objects and each account's
-    /// `AuthenticatorFunctionRefV1` field present — run
-    /// [`prefetch_dynamic_fields`](Self::prefetch_dynamic_fields) (or insert
-    /// them manually) before executing such a transaction.
+    /// Optional: the store also resolves these objects on demand during
+    /// execution. Pre-fetching only saves the per-object round-trips the
+    /// executor would otherwise make for the transaction body.
     pub async fn prefetch(&mut self, transaction: &TransactionData) -> Result<(), VmSdkError> {
         let mut refs: Vec<(ObjectId, Option<Version>)> = Vec::new();
         let input_object_kinds = transaction
@@ -132,22 +142,29 @@ impl GrpcStore {
         self.fetch_and_insert(&refs).await
     }
 
-    /// Recursively fetch the dynamic-field children of every object already in
-    /// the store and insert them too. Move calls that read tables/bags need
-    /// these children present to execute offline — e.g. staking walks the
-    /// validator set stored as a dynamic field inside `IotaSystemState`, and
-    /// `request_add_stake` aborts in `dynamic_field::remove_child_object`
-    /// without them. Call after [`prefetch`](Self::prefetch); children are
-    /// fetched at their latest version, matching how shared objects are loaded.
-    /// Recursion is bounded only by the object graph (a `visited` set breaks
-    /// cycles); intended for local development against trusted nodes.
+    /// Eagerly fetch the dynamic-field children of every object already cached,
+    /// recursively, and insert them too.
+    ///
+    /// Optional: the store resolves dynamic-field children on demand during
+    /// execution, so a run only loads the children it touches (e.g. the slice
+    /// of the validator set staking reads). This walks the *entire*
+    /// dynamic-field graph instead — useful to pre-warm or snapshot it, but
+    /// it over-fetches. Recursion is bounded only by the object graph (a
+    /// `visited` set breaks cycles); intended for local development against
+    /// trusted nodes.
     ///
     /// # Errors
     ///
     /// Returns [`VmSdkError::Store`] if a listing or fetch fails.
     pub async fn prefetch_dynamic_fields(&mut self) -> Result<(), VmSdkError> {
         let mut visited: std::collections::HashSet<ObjectId> = std::collections::HashSet::new();
-        let mut queue: Vec<ObjectId> = self.inner.iter().map(|(id, _)| *id).collect();
+        let mut queue: Vec<ObjectId> = self
+            .inner
+            .lock()
+            .expect("store lock poisoned")
+            .iter()
+            .map(|(id, _)| *id)
+            .collect();
         while let Some(parent) = queue.pop() {
             if !visited.insert(parent) {
                 continue;
@@ -186,16 +203,18 @@ impl GrpcStore {
         Ok(())
     }
 
-    async fn fetch_and_insert(
-        &mut self,
+    /// Fetch and decode objects from the node without caching them.
+    async fn fetch_objects(
+        &self,
         refs: &[(ObjectId, Option<Version>)],
-    ) -> Result<(), VmSdkError> {
+    ) -> Result<Vec<Object>, VmSdkError> {
         let proto_objects = self
             .client
             .get_objects(refs, None)
             .await
             .map_err(|e| StoreError::new("fetch objects via gRPC", e))?
             .into_inner();
+        let mut objects = Vec::with_capacity(proto_objects.len());
         for proto_obj in proto_objects {
             // The proto helper yields the SDK `Object`; round-trip through BCS
             // into the node's `iota_types::object::Object` (identical layout).
@@ -206,15 +225,49 @@ impl GrpcStore {
                 bcs::to_bytes(&sdk_obj).map_err(|e| StoreError::new("re-encode object", e))?;
             let obj: Object =
                 bcs::from_bytes(&bytes).map_err(|e| StoreError::new("decode object", e))?;
-            self.inner.insert(obj);
+            objects.push(obj);
+        }
+        Ok(objects)
+    }
+
+    /// Fetch `refs` and insert them into the cache.
+    async fn fetch_and_insert(
+        &self,
+        refs: &[(ObjectId, Option<Version>)],
+    ) -> Result<(), VmSdkError> {
+        let objects = self.fetch_objects(refs).await?;
+        let mut inner = self.inner.lock().expect("store lock poisoned");
+        for obj in objects {
+            inner.insert(obj);
         }
         Ok(())
+    }
+
+    /// Fetch `refs` synchronously from within the executor by blocking on the
+    /// client. A fetch error collapses to an empty result, leaving the object
+    /// absent so the VM treats it as missing. Must run inside a multi-threaded
+    /// Tokio runtime.
+    fn fetch_blocking(&self, refs: &[(ObjectId, Option<Version>)]) -> Vec<Object> {
+        block_in_place(|| Handle::current().block_on(self.fetch_objects(refs))).unwrap_or_default()
     }
 }
 
 impl Store for GrpcStore {
     fn get_object(&self, id: &ObjectId, version: Option<Version>) -> Option<Object> {
-        self.inner.get_object(id, version)
+        // Scope the read lock so it is released before the blocking fetch
+        // re-acquires it (a std `Mutex` is not reentrant).
+        {
+            let inner = self.inner.lock().expect("store lock poisoned");
+            if let Some(obj) = inner.get_object(id, version) {
+                return Some(obj);
+            }
+        }
+        let fetched = self.fetch_blocking(&[(*id, version)]);
+        let mut inner = self.inner.lock().expect("store lock poisoned");
+        for obj in fetched {
+            inner.insert(obj);
+        }
+        inner.get_object(id, version)
     }
 
     fn get_child_object(
@@ -223,15 +276,30 @@ impl Store for GrpcStore {
         child: &ObjectId,
         version_upper_bound: Version,
     ) -> Option<Object> {
-        self.inner
-            .get_child_object(parent, child, version_upper_bound)
+        {
+            let inner = self.inner.lock().expect("store lock poisoned");
+            if let Some(obj) = inner.get_child_object(parent, child, version_upper_bound) {
+                return Some(obj);
+            }
+        }
+        // Fetch the child at its latest version; the upper-bound check is
+        // re-applied below once it is cached.
+        let fetched = self.fetch_blocking(&[(*child, None)]);
+        let mut inner = self.inner.lock().expect("store lock poisoned");
+        for obj in fetched {
+            inner.insert(obj);
+        }
+        inner.get_child_object(parent, child, version_upper_bound)
     }
 
     fn insert(&mut self, object: Object) {
-        self.inner.insert(object);
+        self.inner
+            .lock()
+            .expect("store lock poisoned")
+            .insert(object);
     }
 
     fn remove(&mut self, id: &ObjectId) {
-        self.inner.remove(id);
+        self.inner.lock().expect("store lock poisoned").remove(id);
     }
 }

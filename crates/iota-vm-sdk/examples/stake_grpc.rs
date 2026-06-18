@@ -46,22 +46,14 @@ async fn main() -> Result<()> {
     builder.stake(STAKE_AMOUNT, validator);
     let tx: TransactionData = builder.finish().await.context("resolve staking tx")?;
 
-    // Pull everything the local VM needs over gRPC: the chain context, the
-    // transaction's input objects, and the system-state dynamic fields the
-    // staking call reads.
-    let mut store = GrpcStore::connect(TESTNET_GRPC_URL).context("connect gRPC store")?;
+    // The store resolves every object the VM reads over gRPC on demand —
+    // inputs and the system-state dynamic fields staking walks — so only the
+    // chain context is fetched up front.
+    let store = GrpcStore::connect(TESTNET_GRPC_URL).context("connect gRPC store")?;
     let ctx = store
         .fetch_chain_context()
         .await
         .context("fetch chain context")?;
-    store
-        .prefetch(&tx)
-        .await
-        .context("prefetch input objects")?;
-    store
-        .prefetch_dynamic_fields()
-        .await
-        .context("prefetch dynamic fields")?;
 
     // Dry-run locally — no signature, no submission.
     let mut vm = LocalVm::new(ctx, store).context("build LocalVm")?;
