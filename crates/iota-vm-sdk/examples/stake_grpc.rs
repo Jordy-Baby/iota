@@ -21,7 +21,8 @@ use iota_sdk_transaction_builder::TransactionBuilder;
 use iota_sdk_types::Address;
 use iota_vm_sdk::{ExecuteOptions, LocalVm, TransactionData, grpc::GrpcStore};
 
-/// Testnet gRPC endpoint the store fetches from (matches `Client::new_testnet`).
+/// Testnet gRPC endpoint the store fetches from (matches
+/// `Client::new_testnet`).
 const TESTNET_GRPC_URL: &str = "https://grpc.testnet.iota.cafe:443";
 /// Account that pays for gas and provides the stake. Replace with your own
 /// funded testnet address — it must own at least one IOTA coin.
@@ -53,7 +54,10 @@ async fn main() -> Result<()> {
         .fetch_chain_context()
         .await
         .context("fetch chain context")?;
-    store.prefetch(&tx).await.context("prefetch input objects")?;
+    store
+        .prefetch(&tx)
+        .await
+        .context("prefetch input objects")?;
     store
         .prefetch_dynamic_fields()
         .await

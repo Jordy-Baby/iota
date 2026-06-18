@@ -54,7 +54,10 @@ async fn main() -> Result<()> {
         .fetch_chain_context()
         .await
         .context("fetch chain context")?;
-    store.prefetch(&tx).await.context("prefetch input objects")?;
+    store
+        .prefetch(&tx)
+        .await
+        .context("prefetch input objects")?;
     store
         .prefetch_dynamic_fields()
         .await
