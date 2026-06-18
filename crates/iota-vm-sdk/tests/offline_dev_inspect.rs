@@ -11,9 +11,10 @@
 use base64::Engine;
 use iota_types::transaction::TransactionData;
 use iota_vm_sdk::{
-    Chain, ChainContext, ExecuteOptions, ExecutionMode, InMemoryStore, LocalVm, ProtocolVersion,
-    SignatureStatus,
+    Chain, ChainContext, ExecuteOptions, ExecutionMode, InMemoryStore, LocalVm, ObjectId,
+    ProtocolVersion, SignatureStatus, TypeTag,
 };
+use move_core_types::annotated_value::MoveValue;
 
 /// Base64-encoded BCS for `0x2::hash::blake2b256([0, 1, 2])` — a pure function
 /// whose only dependencies are the framework packages, so it runs against a
@@ -74,6 +75,28 @@ fn dev_inspect_runs_offline_and_leaves_store_unchanged() {
     assert!(
         store_after.is_empty(),
         "mock gas coin must not be persisted into the store"
+    );
+}
+
+/// `decode_value` resolves both a primitive type and a framework struct layout
+/// (from the `0x2` package in the store), with no network access.
+#[test]
+fn decode_value_resolves_primitive_and_framework_struct() {
+    let vm = LocalVm::new(chain_context(), InMemoryStore::with_framework()).expect("build LocalVm");
+
+    // Primitive: no package resolution needed.
+    let bytes = bcs::to_bytes(&7u64).expect("encode u64");
+    let value = vm.decode_value(&bytes, &TypeTag::U64).expect("decode u64");
+    assert!(matches!(value, MoveValue::U64(7)), "got {value:?}");
+
+    // Struct: the layout is resolved from the framework package in the store.
+    let id = ObjectId::random();
+    let bytes = bcs::to_bytes(&id).expect("encode id");
+    let tag: TypeTag = "0x2::object::ID".parse().expect("parse ID tag");
+    let value = vm.decode_value(&bytes, &tag).expect("decode ID");
+    assert!(
+        matches!(value, MoveValue::Struct(_)),
+        "0x2::object::ID must decode to a struct, got {value:?}"
     );
 }
 
