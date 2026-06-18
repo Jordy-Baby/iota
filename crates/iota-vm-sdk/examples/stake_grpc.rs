@@ -28,7 +28,7 @@ const TESTNET_GRPC_URL: &str = "https://grpc.testnet.iota.cafe:443";
 /// funded testnet address — it must own at least one IOTA coin.
 const SENDER: &str = "0xda1820edf693ee32b5729907b9b2ec8e64980ee8c008c17e89cfb4e5ecd72151";
 /// An active testnet validator to stake with.
-const VALIDATOR: &str = "0x4f9791e5fbbcdf95b7e3c4f12da1f3c0d1c4d8c0d3f2e1a09876543210fedcba";
+const VALIDATOR: &str = "0xa276b4c076fff55588255630e9ee35cf0d07e8d80c78991cfd58b43b687b4206";
 /// Amount to stake, in nanos (1 IOTA = 1_000_000_000 nanos).
 const STAKE_AMOUNT: u64 = 1_000_000_000;
 

@@ -4,28 +4,24 @@
 //! GraphQL-backed store (`feature = "graphql"`, native only).
 //!
 //! [`GraphqlStore`] mirrors [`crate::grpc::GrpcStore`] but fetches objects over
-//! GraphQL. The [`Store`] trait is synchronous and the Move VM resolves objects
-//! on demand mid-execution, so a cache miss is served by blocking on the client
-//! to fetch that object, then caching it. Only the objects a run actually
-//! touches are fetched; [`prefetch`](GraphqlStore::prefetch) is an optional
-//! warm-up.
+//! GraphQL: it wraps a GraphQL client and an in-memory object cache, resolving
+//! objects on demand during execution and caching them, so only the objects a
+//! run actually touches are fetched. [`prefetch`](GraphqlStore::prefetch) is an
+//! optional warm-up.
 //!
-//! On-demand fetching blocks the executor thread on async I/O via
-//! [`block_in_place`], so [`LocalVm::execute`](crate::LocalVm::execute) must
-//! run inside a multi-threaded Tokio runtime (e.g. `#[tokio::main]`).
+//! On-demand fetching blocks the executor thread on async I/O, so
+//! [`LocalVm::execute`](crate::LocalVm::execute) must run inside a
+//! multi-threaded Tokio runtime (e.g. `#[tokio::main]`).
 
-use std::sync::{Arc, Mutex};
+use std::collections::HashSet;
 
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use iota_graphql_rpc_client::simple_client::SimpleClient;
 use iota_sdk_types::{ObjectId, Version};
-use iota_types::{
-    object::Object,
-    transaction::{InputObjectKind, TransactionData, TransactionDataAPI},
-};
-use tokio::{runtime::Handle, task::block_in_place};
+use iota_types::{object::Object, transaction::TransactionData};
 
 use crate::{
+    caching::{CachingStore, ObjectFetcher},
     error::{StoreError, VmSdkError},
     executor::ChainContext,
     store::{InMemoryStore, Store},
@@ -37,9 +33,7 @@ use crate::{
 /// Clones share the same cache and client.
 #[derive(Clone)]
 pub struct GraphqlStore {
-    inner: Arc<Mutex<InMemoryStore>>,
-    client: SimpleClient,
-    last_fetch_error: Arc<Mutex<Option<String>>>,
+    cache: CachingStore<GraphqlFetcher>,
 }
 
 impl GraphqlStore {
@@ -47,9 +41,7 @@ impl GraphqlStore {
     /// packages already loaded so Move calls resolve.
     pub fn new(client: SimpleClient) -> Self {
         Self {
-            inner: Arc::new(Mutex::new(InMemoryStore::with_framework())),
-            client,
-            last_fetch_error: Arc::new(Mutex::new(None)),
+            cache: CachingStore::new(GraphqlFetcher { client }),
         }
     }
 
@@ -66,7 +58,17 @@ impl GraphqlStore {
     /// A snapshot clone of the objects cached so far (framework packages plus
     /// anything fetched on demand or pre-fetched).
     pub fn store(&self) -> InMemoryStore {
-        self.inner.lock().expect("store lock poisoned").clone()
+        self.cache.store()
+    }
+
+    /// The most recent on-demand fetch failure, if any.
+    ///
+    /// A failed cache-miss fetch collapses to "object absent" — surfacing later
+    /// as [`VmSdkError::MissingObject`] — so check this to tell a transient
+    /// transport or decode failure apart from a genuinely missing object.
+    /// Cleared by the next successful fetch.
+    pub fn last_fetch_error(&self) -> Option<String> {
+        self.cache.last_fetch_error()
     }
 
     /// Fetch the chain parameters a [`LocalVm`](crate::LocalVm) needs.
@@ -88,6 +90,8 @@ impl GraphqlStore {
             }
         }"#;
         let json = self
+            .cache
+            .fetcher()
             .client
             .execute(query.to_string(), vec![])
             .await
@@ -128,70 +132,31 @@ impl GraphqlStore {
         })
     }
 
-    /// Fetch every object the transaction references and insert it into the
-    /// store in one batched request. Owned/immutable objects are fetched at
-    /// their transaction versions; shared objects and packages at the latest
-    /// version.
+    /// Fetch every object the transaction references and cache them in one
+    /// batched request.
     ///
     /// Optional: the store also resolves these objects on demand during
     /// execution. Pre-fetching only saves the per-object round-trips the
     /// executor would otherwise make for the transaction body.
     pub async fn prefetch(&mut self, transaction: &TransactionData) -> Result<(), VmSdkError> {
-        let mut refs: Vec<(ObjectId, Option<Version>)> = Vec::new();
-        let input_object_kinds = transaction
-            .input_objects()
-            .map_err(|e| StoreError::new("collect input objects", e))?;
-        for kind in &input_object_kinds {
-            match kind {
-                InputObjectKind::ImmOrOwnedMoveObject(objref) => {
-                    refs.push((objref.object_id, Some(objref.version)))
-                }
-                // Shared objects and packages: latest version.
-                InputObjectKind::SharedMoveObject { id, .. } => refs.push((*id, None)),
-                InputObjectKind::MovePackage(id) => refs.push((*id, None)),
-            }
-        }
-        for gas_ref in transaction.gas() {
-            refs.push((gas_ref.object_id, Some(gas_ref.version)));
-        }
-        for objref in transaction.receiving_objects() {
-            refs.push((objref.object_id, Some(objref.version)));
-        }
-        if refs.is_empty() {
-            return Ok(());
-        }
-        self.fetch_and_insert(&refs).await
+        self.cache.prefetch(transaction).await
     }
 
     /// Eagerly fetch the dynamic-field children of every object already cached,
     /// recursively, and insert them too. Mirrors
     /// [`GrpcStore::prefetch_dynamic_fields`](crate::grpc::GrpcStore::prefetch_dynamic_fields).
     ///
-    /// Optional: the store resolves dynamic-field children on demand during
-    /// execution, so a run only loads the children it touches (e.g. the slice
-    /// of the validator set staking reads). This walks the *entire*
-    /// dynamic-field graph instead — useful to pre-warm or snapshot it, but
-    /// it over-fetches. Recursion is bounded only by the object graph (a
-    /// `visited` set breaks cycles); intended for local development against
-    /// trusted nodes.
-    ///
     /// The GraphQL `dynamicFields` connection returns each field's name and
     /// value but not the `Field` wrapper object's id, so the wrapper id is
-    /// derived from the field name (its type and BCS bytes) the same way the
-    /// Move VM derives it on-chain.
+    /// derived from the field name the same way the Move VM derives it
+    /// on-chain.
     ///
     /// # Errors
     ///
     /// Returns [`VmSdkError::Store`] if a listing or fetch fails.
     pub async fn prefetch_dynamic_fields(&mut self) -> Result<(), VmSdkError> {
-        let mut visited: std::collections::HashSet<ObjectId> = std::collections::HashSet::new();
-        let mut queue: Vec<ObjectId> = self
-            .inner
-            .lock()
-            .expect("store lock poisoned")
-            .iter()
-            .map(|(id, _)| *id)
-            .collect();
+        let mut visited: HashSet<ObjectId> = HashSet::new();
+        let mut queue: Vec<ObjectId> = self.cache.cached_ids();
         while let Some(parent) = queue.pop() {
             if !visited.insert(parent) {
                 continue;
@@ -201,7 +166,7 @@ impl GraphqlStore {
                 continue;
             }
             let refs: Vec<(ObjectId, Option<Version>)> = ids.iter().map(|id| (*id, None)).collect();
-            self.fetch_and_insert(&refs).await?;
+            self.cache.fetch_and_insert(&refs).await?;
             // Recurse into the newly fetched children to find their descendants.
             queue.extend(ids);
         }
@@ -232,6 +197,8 @@ impl GraphqlStore {
                 }} }} }}"#
             );
             let json = self
+                .cache
+                .fetcher()
                 .client
                 .execute(query, vec![])
                 .await
@@ -273,9 +240,39 @@ impl GraphqlStore {
         }
         Ok(ids)
     }
+}
 
-    /// Fetch and decode objects from the node without caching them. Each ref is
-    /// fetched at its given version, or the latest version when `None`.
+impl Store for GraphqlStore {
+    fn get_object(&self, id: &ObjectId, version: Option<Version>) -> Option<Object> {
+        self.cache.get_object(id, version)
+    }
+
+    fn get_child_object(
+        &self,
+        parent: &ObjectId,
+        child: &ObjectId,
+        version_upper_bound: Version,
+    ) -> Option<Object> {
+        self.cache
+            .get_child_object(parent, child, version_upper_bound)
+    }
+
+    fn insert(&mut self, object: Object) {
+        self.cache.insert(object);
+    }
+
+    fn remove(&mut self, id: &ObjectId) {
+        self.cache.remove(id);
+    }
+}
+
+/// GraphQL transport for [`CachingStore`].
+#[derive(Clone)]
+struct GraphqlFetcher {
+    client: SimpleClient,
+}
+
+impl ObjectFetcher for GraphqlFetcher {
     async fn fetch_objects(
         &self,
         refs: &[(ObjectId, Option<Version>)],
@@ -318,50 +315,6 @@ impl GraphqlStore {
         }
         Ok(objects)
     }
-
-    /// Fetch `refs` and insert them into the cache.
-    async fn fetch_and_insert(
-        &self,
-        refs: &[(ObjectId, Option<Version>)],
-    ) -> Result<(), VmSdkError> {
-        let objects = self.fetch_objects(refs).await?;
-        let mut inner = self.inner.lock().expect("store lock poisoned");
-        for obj in objects {
-            inner.insert(obj);
-        }
-        Ok(())
-    }
-
-    /// The most recent on-demand fetch failure, if any.
-    ///
-    /// The synchronous [`Store`] surface cannot return an error from a cache
-    /// miss, so a failed on-demand fetch collapses to "object absent" and later
-    /// surfaces as
-    /// [`VmSdkError::MissingObject`](crate::VmSdkError::MissingObject).
-    /// When a run fails that way, check this to tell a transient transport or
-    /// decode failure apart from a genuinely missing object. Shared across
-    /// clones; overwritten by each failing fetch.
-    pub fn last_fetch_error(&self) -> Option<String> {
-        self.last_fetch_error
-            .lock()
-            .expect("error lock poisoned")
-            .clone()
-    }
-
-    /// Fetch `refs` synchronously from within the executor by blocking on the
-    /// client. A fetch error collapses to an empty result, leaving the object
-    /// absent so the VM treats it as missing, but is stashed in
-    /// [`last_fetch_error`](Self::last_fetch_error) first. Must run inside a
-    /// multi-threaded Tokio runtime.
-    fn fetch_blocking(&self, refs: &[(ObjectId, Option<Version>)]) -> Vec<Object> {
-        match block_in_place(|| Handle::current().block_on(self.fetch_objects(refs))) {
-            Ok(objects) => objects,
-            Err(e) => {
-                *self.last_fetch_error.lock().expect("error lock poisoned") = Some(e.to_string());
-                Vec::new()
-            }
-        }
-    }
 }
 
 /// Derive the on-chain `Field` wrapper object id for a `dynamicFields` node
@@ -385,58 +338,6 @@ fn parse_start_timestamp_millis(s: &str) -> Option<u64> {
     }
     let datetime = chrono::DateTime::parse_from_rfc3339(s).ok()?;
     u64::try_from(datetime.timestamp_millis()).ok()
-}
-
-impl Store for GraphqlStore {
-    fn get_object(&self, id: &ObjectId, version: Option<Version>) -> Option<Object> {
-        // Scope the read lock so it is released before the blocking fetch
-        // re-acquires it (a std `Mutex` is not reentrant).
-        {
-            let inner = self.inner.lock().expect("store lock poisoned");
-            if let Some(obj) = inner.get_object(id, version) {
-                return Some(obj);
-            }
-        }
-        let fetched = self.fetch_blocking(&[(*id, version)]);
-        let mut inner = self.inner.lock().expect("store lock poisoned");
-        for obj in fetched {
-            inner.insert(obj);
-        }
-        inner.get_object(id, version)
-    }
-
-    fn get_child_object(
-        &self,
-        parent: &ObjectId,
-        child: &ObjectId,
-        version_upper_bound: Version,
-    ) -> Option<Object> {
-        {
-            let inner = self.inner.lock().expect("store lock poisoned");
-            if let Some(obj) = inner.get_child_object(parent, child, version_upper_bound) {
-                return Some(obj);
-            }
-        }
-        // Fetch the child at its latest version; the upper-bound check is
-        // re-applied below once it is cached.
-        let fetched = self.fetch_blocking(&[(*child, None)]);
-        let mut inner = self.inner.lock().expect("store lock poisoned");
-        for obj in fetched {
-            inner.insert(obj);
-        }
-        inner.get_child_object(parent, child, version_upper_bound)
-    }
-
-    fn insert(&mut self, object: Object) {
-        self.inner
-            .lock()
-            .expect("store lock poisoned")
-            .insert(object);
-    }
-
-    fn remove(&mut self, id: &ObjectId) {
-        self.inner.lock().expect("store lock poisoned").remove(id);
-    }
 }
 
 #[cfg(test)]

@@ -127,10 +127,8 @@ impl LocalVm {
             let backend = StoreBackend::new(self.store.as_ref());
             execute_prepared(&env, &backend, prepared, opts.mode)?
         };
-        // The dev-inspect engine entry point does not accept a `MoveTraceBuilder`
-        // (only the authenticator path does), so this path cannot capture a
-        // trace. Report its absence honestly as `None` rather than an empty
-        // trace — see `DebugConfig::with_trace`.
+        // The dev-inspect entry point accepts no `MoveTraceBuilder`, so this path
+        // never captures a trace; pass `None`. See `DebugConfig::with_trace`.
         let artifacts = env.collect_artifacts(None);
         self.finish(sim, opts.mode, SignatureStatus::NotChecked, artifacts)
     }
@@ -205,9 +203,8 @@ impl LocalVm {
             let backend = StoreBackend::new(self.store.as_ref());
             if move_authenticators.is_empty() {
                 // Standard schemes were verified cryptographically above; the
-                // run's outcome cannot retroactively invalidate them. Like
-                // `execute`, this runs through the dev-inspect entry point,
-                // which captures no trace.
+                // run's outcome cannot retroactively invalidate them. Runs
+                // through the dev-inspect entry point, so no trace is captured.
                 (
                     execute_prepared(&env, &backend, prepared, opts.mode)?,
                     SignatureStatus::Verified,
@@ -264,9 +261,9 @@ impl LocalVm {
     /// Decode a single BCS-encoded value of the given
     /// [`TypeTag`](iota_sdk_types::TypeTag) into an annotated
     /// [`MoveValue`](move_core_types::annotated_value::MoveValue), resolving
-    /// any struct layouts from the packages in the store. Used to turn
-    /// dev-inspect return values and mutable reference outputs (raw
-    /// `(bytes, type)` pairs) into readable values.
+    /// any struct layouts from the packages in the store. Turns raw
+    /// `(bytes, type)` pairs — dev-inspect return values and mutable
+    /// reference outputs — into readable values.
     ///
     /// # Errors
     ///
