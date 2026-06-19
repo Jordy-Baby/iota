@@ -104,9 +104,7 @@ async fn compare_local_vm_staking_against_test_cluster() {
     // Local VM: every object the run reads — the transaction inputs and the
     // system-state dynamic fields staking walks — is resolved on demand over
     // gRPC during execution, against the same Move engine the node uses. Only
-    // the chain context is fetched up front; prefetching is an optional batching
-    // optimisation and is deliberately not used here, so this also exercises the
-    // on-demand resolution path.
+    // the chain context is fetched up front.
     let store = GrpcStore::connect(test_cluster.grpc_url()).expect("connect gRPC store");
     let ctx = store
         .fetch_chain_context()
