@@ -45,11 +45,8 @@ use crate::{
     },
 };
 
-/// Balance of the one-shot mock gas coin minted for a gasless transaction.
-/// Must equal the node's simulation gas coin value (`iota-core`'s
-/// `SIMULATION_GAS_COIN_VALUE`) so a minted-gas run produces the same gas
-/// object the node would; the node can't be depended on here, so the value is
-/// mirrored.
+/// Balance of the mock gas coin minted for a gasless transaction; same as the
+/// node's `SIMULATION_GAS_COIN_VALUE`.
 const SIMULATION_GAS_COIN_VALUE: u64 = 1_000_000_000 * iota_types::gas_coin::NANOS_PER_IOTA;
 
 pub(super) struct PreparedTransaction {
@@ -93,12 +90,8 @@ pub(super) fn prepare_transaction(
         build_input_objects(store, &raw_input_object_kinds)?;
     let receiving_objects = build_receiving_objects(store, &receiving_object_refs)?;
 
-    // Mint a one-shot mock gas coin if the transaction carries no gas payment.
-    // It must be byte-for-byte the coin the node mints in the same case, so a
-    // minted-gas run yields the same gas object a node dry-run/dev-inspect of the
-    // gasless transaction would (id, version, owner, previous transaction, and
-    // the `SIMULATION_GAS_COIN_VALUE` balance — large enough that the balance
-    // check `gas_balance >= gas_budget` always passes).
+    // Mint a one-shot mock gas coin if the transaction carries no gas payment,
+    // the same coin the node mints in this case.
     let mock_gas_id = if transaction.gas().is_empty() {
         let mock_gas_object = Object::new_move(
             MoveObject::new_gas_coin(
