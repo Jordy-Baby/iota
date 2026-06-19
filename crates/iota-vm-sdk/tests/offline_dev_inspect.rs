@@ -12,7 +12,7 @@ use base64::Engine;
 use iota_types::transaction::TransactionData;
 use iota_vm_sdk::{
     Chain, ChainContext, ExecuteOptions, ExecutionMode, InMemoryStore, LocalVm, ObjectId,
-    ProtocolVersion, SignatureStatus, TypeTag,
+    ProtocolVersion, SignatureStatus, StructTag, TypeTag,
 };
 use move_core_types::annotated_value::MoveValue;
 
@@ -21,12 +21,6 @@ use move_core_types::annotated_value::MoveValue;
 /// framework-only store with no extra objects.
 const BLAKE2B_TX_B64: &str = "AAABAAQDAAECAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgRoYXNoCmJsYWtlMmIyNTYAAQEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA6AMAAAAAAAAAypo7AAAAAAA=";
 
-fn blake2b_tx_bytes() -> Vec<u8> {
-    base64::engine::general_purpose::STANDARD
-        .decode(BLAKE2B_TX_B64)
-        .expect("base64 decode")
-}
-
 fn chain_context() -> ChainContext {
     // Dev-inspect does not need these to match any real network state.
     ChainContext::new(ProtocolVersion::MAX, Chain::Unknown).with_reference_gas_price(1000)
@@ -34,7 +28,9 @@ fn chain_context() -> ChainContext {
 
 #[test]
 fn dev_inspect_runs_offline_and_leaves_store_unchanged() {
-    let tx_bytes = blake2b_tx_bytes();
+    let tx_bytes = base64::engine::general_purpose::STANDARD
+        .decode(BLAKE2B_TX_B64)
+        .expect("base64 decode");
     let tx: TransactionData = bcs::from_bytes(&tx_bytes).expect("decode tx");
 
     let store = InMemoryStore::with_framework();
@@ -92,7 +88,7 @@ fn decode_value_resolves_primitive_and_framework_struct() {
     // Struct: the layout is resolved from the framework package in the store.
     let id = ObjectId::random();
     let bytes = bcs::to_bytes(&id).expect("encode id");
-    let tag: TypeTag = "0x2::object::ID".parse().expect("parse ID tag");
+    let tag = TypeTag::from(StructTag::new_id());
     let value = vm.decode_value(&bytes, &tag).expect("decode ID");
     assert!(
         matches!(value, MoveValue::Struct(_)),

@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! End-to-end comparison: run a staking transaction through the local
-//! [`LocalVm`] (objects pre-fetched over gRPC into a [`GrpcStore`]) and against
-//! a live [`test_cluster::TestCluster`]'s own dry-run, then assert both agree.
+//! [`LocalVm`] (objects resolved on demand over gRPC from a [`GrpcStore`]) and
+//! against a live [`test_cluster::TestCluster`]'s own dry-run, then assert both
+//! agree.
 
 use std::collections::BTreeSet;
 
@@ -74,10 +75,13 @@ async fn compare_local_vm_staking_against_test_cluster() {
     // carries each object's version and content digest, so the backends must
     // agree on resulting contents, not merely on which objects were touched.
     //
-    // The gas object is the one principled exception: local runs and the node's
-    // dry-run meter gas differently, so the gas coin's post-execution balance —
-    // and therefore its digest — can legitimately differ. It is compared by id
-    // and owner only, and excluded from the full-ref mutated set.
+    // The gas object is the one principled exception. What differs is the gas
+    // *cost*: local dev-inspect runs against a mock gas coin with relaxed
+    // metering, and local gas accounting need not match the node's to the nano,
+    // so the gas coin's post-execution balance — and therefore its content
+    // digest — can legitimately differ even when every other object matches. It
+    // is compared by id and owner only, and excluded from the full-ref mutated
+    // set.
     let node_gas = (
         dry_run.effects.gas_object().object_id(),
         dry_run.effects.gas_object().owner,
@@ -97,15 +101,17 @@ async fn compare_local_vm_staking_against_test_cluster() {
         .collect();
     let node_deleted: BTreeSet<ObjectRef> = dry_run.effects.deleted().iter().copied().collect();
 
-    // Local VM: pre-fetch the transaction's input objects over gRPC; everything
-    // else (including the system-state dynamic fields staking reads) is resolved
-    // on demand during execution against the same Move engine the node uses.
-    let mut store = GrpcStore::connect(test_cluster.grpc_url()).expect("connect gRPC store");
+    // Local VM: every object the run reads — the transaction inputs and the
+    // system-state dynamic fields staking walks — is resolved on demand over
+    // gRPC during execution, against the same Move engine the node uses. Only
+    // the chain context is fetched up front; prefetching is an optional batching
+    // optimisation and is deliberately not used here, so this also exercises the
+    // on-demand resolution path.
+    let store = GrpcStore::connect(test_cluster.grpc_url()).expect("connect gRPC store");
     let ctx = store
         .fetch_chain_context()
         .await
         .expect("fetch chain context");
-    store.prefetch(&tx_data).await.expect("prefetch objects");
 
     let mut vm = LocalVm::new(ctx, store).expect("build LocalVm");
 

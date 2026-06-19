@@ -144,12 +144,16 @@ fn collect_profile(capture: Option<&ProfileCapture>) -> Option<ProfileOutput> {
     }
 }
 
+/// Name prefix for the per-run gas-profile capture directory created in the
+/// system temp dir.
+const PROFILE_CAPTURE_DIR_PREFIX: &str = "iota-vm-sdk-gas-profile-";
+
 fn profile_capture_dir() -> std::path::PathBuf {
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let n = COUNTER.fetch_add(1, Ordering::Relaxed);
     let pid = std::process::id();
-    std::env::temp_dir().join(format!("iota-vm-sdk-gas-profile-{pid}-{n}"))
+    std::env::temp_dir().join(format!("{PROFILE_CAPTURE_DIR_PREFIX}{pid}-{n}"))
 }
 
 /// Merge every Speedscope JSON file the profiler wrote into `dir` into one
