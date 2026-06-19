@@ -67,16 +67,6 @@ impl GraphqlStore {
         self.cache.store()
     }
 
-    /// The most recent on-demand fetch failure, if any.
-    ///
-    /// A failed cache-miss fetch collapses to "object absent" — surfacing later
-    /// as [`VmSdkError::MissingObject`] — so check this to tell a transient
-    /// transport or decode failure apart from a genuinely missing object.
-    /// Cleared by the next successful fetch.
-    pub fn last_fetch_error(&self) -> Option<String> {
-        self.cache.last_fetch_error()
-    }
-
     /// Fetch the chain parameters a [`LocalVm`](crate::LocalVm) needs.
     ///
     /// The [`Chain`](crate::Chain) is resolved from the node's chain identifier
@@ -149,7 +139,11 @@ impl GraphqlStore {
 }
 
 impl Store for GraphqlStore {
-    fn get_object(&self, id: &ObjectId, version: Option<Version>) -> Option<Object> {
+    fn get_object(
+        &self,
+        id: &ObjectId,
+        version: Option<Version>,
+    ) -> Result<Option<Object>, StoreError> {
         self.cache.get_object(id, version)
     }
 
@@ -158,7 +152,7 @@ impl Store for GraphqlStore {
         parent: &ObjectId,
         child: &ObjectId,
         version_upper_bound: Version,
-    ) -> Option<Object> {
+    ) -> Result<Option<Object>, StoreError> {
         self.cache
             .get_child_object(parent, child, version_upper_bound)
     }
@@ -181,7 +175,7 @@ struct GraphqlFetcher {
 impl GraphqlFetcher {
     /// Run a raw GraphQL query and return its `data` payload, surfacing any
     /// GraphQL `errors` as a [`StoreError`] tagged with `context`.
-    async fn query(&self, context: &str, query: String) -> Result<serde_json::Value, VmSdkError> {
+    async fn query(&self, context: &str, query: String) -> Result<serde_json::Value, StoreError> {
         let request =
             serde_json::Map::from_iter([("query".to_owned(), serde_json::Value::String(query))]);
         let response = self
@@ -195,11 +189,11 @@ impl GraphqlFetcher {
                 .map(|e| e.message.as_str())
                 .collect::<Vec<_>>()
                 .join("; ");
-            return Err(StoreError::new(context.to_owned(), message).into());
+            return Err(StoreError::new(context.to_owned(), message));
         }
         response
             .data
-            .ok_or_else(|| StoreError::new(context.to_owned(), "empty response").into())
+            .ok_or_else(|| StoreError::new(context.to_owned(), "empty response"))
     }
 }
 
@@ -207,7 +201,7 @@ impl ObjectFetcher for GraphqlFetcher {
     async fn fetch_objects(
         &self,
         refs: &[(ObjectId, Option<Version>)],
-    ) -> Result<Vec<Object>, VmSdkError> {
+    ) -> Result<Vec<Object>, StoreError> {
         let mut aliases: Vec<String> = Vec::with_capacity(refs.len());
         for (id, version) in refs {
             match version {

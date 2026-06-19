@@ -66,16 +66,6 @@ impl GrpcStore {
         self.cache.store()
     }
 
-    /// The most recent on-demand fetch failure, if any.
-    ///
-    /// A failed cache-miss fetch collapses to "object absent" — surfacing later
-    /// as [`VmSdkError::MissingObject`] — so check this to tell a transient
-    /// transport or decode failure apart from a genuinely missing object.
-    /// Cleared by the next successful fetch.
-    pub fn last_fetch_error(&self) -> Option<String> {
-        self.cache.last_fetch_error()
-    }
-
     /// Fetch the chain parameters a [`LocalVm`](crate::LocalVm) needs.
     ///
     /// The [`Chain`](crate::Chain) is resolved from the node's service info so
@@ -132,7 +122,11 @@ impl GrpcStore {
 }
 
 impl Store for GrpcStore {
-    fn get_object(&self, id: &ObjectId, version: Option<Version>) -> Option<Object> {
+    fn get_object(
+        &self,
+        id: &ObjectId,
+        version: Option<Version>,
+    ) -> Result<Option<Object>, StoreError> {
         self.cache.get_object(id, version)
     }
 
@@ -141,7 +135,7 @@ impl Store for GrpcStore {
         parent: &ObjectId,
         child: &ObjectId,
         version_upper_bound: Version,
-    ) -> Option<Object> {
+    ) -> Result<Option<Object>, StoreError> {
         self.cache
             .get_child_object(parent, child, version_upper_bound)
     }
@@ -165,7 +159,7 @@ impl ObjectFetcher for GrpcFetcher {
     async fn fetch_objects(
         &self,
         refs: &[(ObjectId, Option<Version>)],
-    ) -> Result<Vec<Object>, VmSdkError> {
+    ) -> Result<Vec<Object>, StoreError> {
         let proto_objects = self
             .client
             .get_objects(refs, None)
