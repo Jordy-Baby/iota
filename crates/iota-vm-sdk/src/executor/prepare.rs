@@ -131,8 +131,12 @@ pub(super) fn prepare_transaction(
             receiving_objects,
         )
         .map_err(|e| ValidationError::new("dev-inspect input check", e))?;
+        // Meter at `max_tx_gas`, matching the node's dev-inspect (which ignores
+        // the declared budget here). Dev-inspect is run before a budget is
+        // settled, so metering at the tx's budget would spuriously abort a
+        // low- or zero-budget transaction with `InsufficientGas`.
         let gas_status = IotaGasStatus::new(
-            transaction.gas_budget(),
+            env.protocol_config.max_tx_gas(),
             transaction.gas_price(),
             env.reference_gas_price,
             &env.protocol_config,
