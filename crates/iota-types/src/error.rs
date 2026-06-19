@@ -530,6 +530,30 @@ pub enum IotaError {
     #[error("Invalid DKG message size")]
     InvalidDkgMessageSize,
 
+    #[error(
+        "Attestation author mismatch: attestation claims attestor {expected:?} \
+         but the block was authored by {actual:?}"
+    )]
+    AttestationAuthorMismatch {
+        expected: starfish_config::AuthorityIndex,
+        actual: starfish_config::AuthorityIndex,
+    },
+
+    #[error(
+        "Attestation reports computation_units = {actual} gas units, \
+         below the protocol minimum of {minimum} \
+         (`min(base_tx_cost_fixed, gas_rounding_step)`); \
+         no honest dry-run can meter below this minimum"
+    )]
+    AttestationUnitsBelowMinimum { actual: u64, minimum: u64 },
+
+    #[error(
+        "Attestation reports computation_units = {actual} gas units, \
+         above the user's budget maximum of {maximum} (`gas_budget / gas_price`); \
+         an honest dry-run cannot exceed what the tx can pay for"
+    )]
+    AttestationUnitsAboveBudget { actual: u64, maximum: u64 },
+
     #[error("Unexpected message.")]
     UnexpectedMessage,
 
