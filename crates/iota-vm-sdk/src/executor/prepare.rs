@@ -131,16 +131,15 @@ pub(super) fn prepare_transaction(
             receiving_objects,
         )
         .map_err(|e| ValidationError::new("dev-inspect input check", e))?;
-        // The plain dev-inspect path runs through the engine's dev-inspect entry
-        // point and, like the node, meters at `max_tx_gas` so an unset or low
-        // budget doesn't spuriously abort with `InsufficientGas`. The
-        // `MoveAuthenticator` path (authenticator budget set) instead runs
-        // checked execution, which smashes the budget off the gas coin's
-        // balance, so it must meter at the transaction's own budget.
-        let dev_inspect_gas_budget = if authenticator_gas_budget > 0 {
-            transaction.gas_budget()
-        } else {
+        // A gasless transaction is funded with a large mock coin, so meter at
+        // `max_tx_gas` (like the node) — a dev-inspect run before a budget is
+        // settled isn't limited by the tx's budget. With a real gas coin, meter
+        // at the transaction's budget so the amount smashed off the coin during
+        // execution stays within its balance.
+        let dev_inspect_gas_budget = if mock_gas_id.is_some() {
             env.protocol_config.max_tx_gas()
+        } else {
+            transaction.gas_budget()
         };
         let gas_status = IotaGasStatus::new(
             dev_inspect_gas_budget,
