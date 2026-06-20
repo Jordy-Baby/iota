@@ -218,17 +218,29 @@ impl ObjectFetcher for GraphqlFetcher {
         }
         let query = format!("{{ {} }}", aliases.join("\n"));
         let data = self.query("GraphQL query", query).await?;
-        // All-or-nothing, matching the gRPC fetcher: every requested ref must
-        // resolve, else fail loudly rather than return a partial Vec.
+        // A missing object resolves to `null` (so its `bcs` is absent). The
+        // `Store` contract treats absence as `Ok(None)` (the VM's child-object
+        // resolver relies on this — a dynamic field that does not exist must
+        // read as absent, not fault), so a single-object request that comes
+        // back missing yields no objects rather than an error. A batched
+        // request can't say which ref was missing, so it stays all-or-nothing;
+        // the on-demand resolution path only ever fetches one object at a time.
         let mut objects = Vec::with_capacity(refs.len());
         for (index, (id, _)) in refs.iter().enumerate() {
             let alias = format!("v{index}");
-            let bcs_b64 = data
+            let bcs_b64 = match data
                 .pointer(&format!("/{alias}/bcs"))
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| {
-                    StoreError::new("GraphQL query", format!("object {id} not found"))
-                })?;
+            {
+                Some(bcs_b64) => bcs_b64,
+                None if refs.len() == 1 => return Ok(Vec::new()),
+                None => {
+                    return Err(StoreError::new(
+                        "GraphQL query",
+                        format!("object {id} not found"),
+                    ));
+                }
+            };
             let bytes = BASE64
                 .decode(bcs_b64)
                 .map_err(|e| StoreError::new(format!("decode {alias}"), e))?;
