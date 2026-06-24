@@ -7909,6 +7909,7 @@ dependencies = [
  "iota-common",
  "iota-config",
  "iota-core",
+ "iota-data-ingestion-core",
  "iota-genesis-builder",
  "iota-json-rpc-types",
  "iota-keys",
