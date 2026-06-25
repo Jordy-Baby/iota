@@ -431,6 +431,33 @@ const ATTESTATION_COST_RATIO_BUCKETS: &[f64] = &[
     0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99, 1.0, 1.01, 1.05, 1.1, 1.25, 1.5, 2.0, 4.0, 10.0,
 ];
 
+/// Test-only fault injection for stress workloads W6 (under-reporting attestor)
+/// and W7 (over-reporting attestor). When `IOTA_ATTESTOR_SKEW_PCT` is
+/// set, this validator scales the computation cost it reports in attestations
+/// by that percent of the real dry-run cost: `100` (or unset) is honest, `<100`
+/// under-reports (W6), `>100` over-reports (W7). Set on a single validator to
+/// poison just that attestor.
+///
+/// This deliberately makes the attestor lie about cost; it exists only on the
+/// validator-attestation test branch and must never be enabled in production.
+static ATTESTOR_SKEW_PCT: once_cell::sync::Lazy<Option<u64>> = once_cell::sync::Lazy::new(|| {
+    let percent = std::env::var("IOTA_ATTESTOR_SKEW_PCT")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .filter(|p| *p != 100);
+
+    if let Some(percent) = percent {
+        warn!(
+            percent,
+            "ATTESTOR COST SKEW active (test-only, W6/W7): this validator \
+                 will report computation costs scaled to {percent}% of the real \
+                 dry-run value. Never enable this in production."
+        );
+    }
+
+    percent
+});
+
 /// Gas coin value used in dev-inspect and dry-runs if no gas coin was provided.
 pub const SIMULATION_GAS_COIN_VALUE: u64 = 1_000_000_000 * NANOS_PER_IOTA; // 1B IOTA
 
@@ -1339,6 +1366,12 @@ impl AuthorityState {
             .computation_cost
             .checked_div(tx_data.gas_price())
             .unwrap_or(0);
+
+        // W6/W7 fault injection: a poisoned attestor (IOTA_ATTESTOR_SKEW_PCT
+        // set on this validator via start.sh) reports cost scaled to skew% of real.
+        let computation_units = ATTESTOR_SKEW_PCT.map_or(computation_units, |p| {
+            computation_units.saturating_mul(p) / 100
+        });
 
         // `object_versions` is the evidence base for malicious-attestor detection. We
         // pull `input_objects` (resolved tx + authenticator inputs) and
