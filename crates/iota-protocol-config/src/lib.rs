@@ -19,7 +19,7 @@ use tracing::{info, warn};
 
 /// The minimum and maximum protocol versions supported by this build.
 const MIN_PROTOCOL_VERSION: u64 = 1;
-pub const MAX_PROTOCOL_VERSION: u64 = 30;
+pub const MAX_PROTOCOL_VERSION: u64 = 31;
 
 /// Protocol version that IIP8 took effect.
 pub const PROTOCOL_VERSION_IIP8: u64 = 20;
@@ -1373,6 +1373,15 @@ pub struct ProtocolConfig {
     /// be accounted for in subsequent commits.
     max_congestion_limit_overshoot_per_commit: Option<u64>,
 
+    /// Maximum number of transactions from a single consensus commit that may
+    /// be scheduled to execute concurrently (overlapping in time) by the
+    /// congestion tracker — i.e. the size of the execution-worker pool.
+    /// `Some(n)` activates execution-worker congestion control, capping
+    /// concurrency at `n` transactions so that owned-object-only transactions
+    /// are also scheduled, deferred and shed by the tracker; `None` disables it
+    /// and owned-object-only transactions bypass the tracker as before.
+    max_concurrent_execution_workers: Option<u16>,
+
     /// Scorer version. When set to `None`, MisbehaviorReports are not sent nor
     /// considered valid. When set to `Some(version)`, scores are included in
     /// the MisbehaviorReports messages, where `version` determines the scoring
@@ -2380,6 +2389,8 @@ impl ProtocolConfig {
 
             max_congestion_limit_overshoot_per_commit: None,
 
+            max_concurrent_execution_workers: None,
+
             scorer_version: None,
 
             // `auth_context` module
@@ -2950,6 +2961,14 @@ impl ProtocolConfig {
                     // `get_attr<T>`, a generic native that
                     // lets Move code read any numeric or boolean
                     // protocol parameter by name (returning Option<T>).
+                }
+                31 => {
+                    // Activate execution-worker congestion control so that
+                    // owned-object-only transactions are scheduled, deferred
+                    // and shed by the congestion tracker. Only takes effect
+                    // under the white-flag flow. NOTE: placeholder value —
+                    // tune the worker-concurrency cap before release.
+                    cfg.max_concurrent_execution_workers = Some(50);
                 }
                 // Use this template when making changes:
                 //
