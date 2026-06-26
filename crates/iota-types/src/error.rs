@@ -677,6 +677,12 @@ pub enum IotaError {
     )]
     ValidatorOverloadedRetryAfter { retry_after_secs: u64 },
 
+    #[error(
+        "Transaction shed due to execution congestion. Resubmit a new transaction with a gas price \
+        of at least {suggested_gas_price}"
+    )]
+    ValidatorTransactionCongested { suggested_gas_price: u64 },
+
     #[error("Too many requests")]
     TooManyRequests,
 
@@ -848,6 +854,12 @@ impl IotaError {
             // Transient consensus failure — other validators likely unaffected
             IotaError::FailedToSubmitToConsensus(..) => true,
 
+            // Non retryable error.
+            // Congestion shedding requires the client to resubmit a *new*
+            // transaction at a higher gas price, so auto-retrying the same
+            // signed bytes is pointless — surface it to the caller instead.
+            IotaError::ValidatorTransactionCongested { .. } => false,
+
             // Non retryable error
             IotaError::Execution(..) => false,
             IotaError::ByzantineAuthoritySuspicion { .. } => false,
@@ -954,6 +966,8 @@ pub fn categorize(error: &IotaError) -> ErrorCategory {
         | IotaError::TooManyTransactionsPendingConsensus
         | IotaError::ValidatorOverloadedRetryAfter { .. } => ErrorCategory::ValidatorOverloaded,
 
+        IotaError::ValidatorTransactionCongested { .. } => ErrorCategory::TransactionCongested,
+
         _ => ErrorCategory::Aborted,
     }
 }
@@ -975,6 +989,10 @@ pub enum ErrorCategory {
     ValidatorOverloaded,
     /// Target validator is down or there are network issues.
     Unavailable,
+    /// Transaction was shed due to execution congestion. The client must
+    /// resubmit a new transaction at a higher gas price (the same signed bytes
+    /// will be shed again), so this is not retriable by the driver itself.
+    TransactionCongested,
 }
 
 impl ErrorCategory {
