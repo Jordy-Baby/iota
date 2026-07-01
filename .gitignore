@@ -115,5 +115,5 @@ apps/explorer/public/*.wasm
 dev-tools/iota-private-network/configs/genesis/benchmark.keystore
 
 # stress-test run artifacts: per-experiment data + plots (e.g. h1/run.sh -> h1/results/)
-stress-attestation-sequencer/*/results/
+stress-attestation-sequencer/*/results*/
 sweeps/
