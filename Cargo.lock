@@ -6310,6 +6310,7 @@ version = "1.27.0-alpha"
 dependencies = [
  "anyhow",
  "async-stream",
+ "async-trait",
  "bcs",
  "futures",
  "http 1.4.0",
