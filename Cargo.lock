@@ -11408,6 +11408,7 @@ name = "prometheus-filtered"
 version = "1.28.0-alpha"
 dependencies = [
  "prometheus",
+ "serde",
  "tracing",
 ]
 
