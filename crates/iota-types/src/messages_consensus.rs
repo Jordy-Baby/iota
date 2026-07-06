@@ -21,6 +21,7 @@ use tracing::warn;
 use crate::{
     base_types::{AuthorityName, ConciseableName, TransactionDigest},
     crypto::{AuthoritySignature, DefaultHash, default_hash},
+    deny_rule_governance::DenyRuleProposal,
     digests::{Digest, MisbehaviorReportDigest},
     message_envelope::{Envelope, Message, VerifiedEnvelope},
     messages_checkpoint::{CheckpointSequenceNumber, CheckpointSignatureMessage},
@@ -57,6 +58,7 @@ pub enum ConsensusTransactionKey {
     /// P-COOL user transaction key (by transaction digest).
     UserTransaction(TransactionDigest),
     OverloadNotificationV1(AuthorityName, u64 /* generation */),
+    DenyRuleProposal(AuthorityName, u64 /* generation */),
     // New entries should be added at the end to preserve serialization compatibility. DO NOT
     // CHANGE THE ORDER OF EXISTING ENTRIES!
 }
@@ -102,6 +104,13 @@ impl Debug for ConsensusTransactionKey {
                 write!(
                     f,
                     "OverloadNotificationV1({:?}, gen={generation:?})",
+                    name.concise()
+                )
+            }
+            Self::DenyRuleProposal(name, generation) => {
+                write!(
+                    f,
+                    "DenyRuleProposal({:?}, gen={generation:?})",
                     name.concise()
                 )
             }
@@ -252,6 +261,10 @@ pub enum ConsensusTransactionKind {
         u64, // generation
         u8,  // percentage
     ),
+    /// A validator's full-state deny rule proposal. Unsigned: the sender is
+    /// authenticated as the consensus block author and must match
+    /// `DenyRuleProposal::authority`.
+    DenyRuleProposal(DenyRuleProposal),
     // New entries should be added at the end to preserve serialization compatibility. DO NOT
     // CHANGE THE ORDER OF EXISTING ENTRIES!
 }
@@ -596,6 +609,16 @@ impl ConsensusTransaction {
         }
     }
 
+    pub fn new_deny_rule_proposal(proposal: DenyRuleProposal) -> Self {
+        let mut hasher = DefaultHasher::new();
+        proposal.hash(&mut hasher);
+        let tracking_id = hasher.finish().to_le_bytes();
+        Self {
+            tracking_id,
+            kind: ConsensusTransactionKind::DenyRuleProposal(proposal),
+        }
+    }
+
     pub fn get_tracking_id(&self) -> u64 {
         (&self.tracking_id[..])
             .read_u64::<BigEndian>()
@@ -648,6 +671,9 @@ impl ConsensusTransaction {
             }
             ConsensusTransactionKind::OverloadNotificationV1(authority, generation, _) => {
                 ConsensusTransactionKey::OverloadNotificationV1(*authority, *generation)
+            }
+            ConsensusTransactionKind::DenyRuleProposal(proposal) => {
+                ConsensusTransactionKey::DenyRuleProposal(proposal.authority, proposal.generation)
             }
         }
     }
@@ -751,6 +777,58 @@ mod tests {
         assert_eq!(
             legacy_bytes, new_bytes,
             "ConsensusTransactionKind::MisbehaviorReport wire format must not change — testnet is live"
+        );
+    }
+
+    /// Pins `ConsensusTransactionKind::DenyRuleProposal`'s variant tag (11)
+    /// and body layout: `(authority, generation, DenyRuleSet)` with the rule
+    /// set's fields in declaration order. Reordering enum variants or
+    /// `DenyRuleSet` fields breaks nodes on the old build.
+    #[test]
+    fn deny_rule_proposal_consensus_kind_wire_format_unchanged() {
+        use std::collections::BTreeSet;
+
+        use iota_sdk_types::{Address, ObjectId};
+
+        use crate::deny_rule_governance::DenyRuleSet;
+
+        let authority = AuthorityName::default();
+        let address = Address::new([7u8; 32]);
+        let proposal = DenyRuleProposal {
+            authority,
+            generation: 42,
+            proposed_rules: DenyRuleSet {
+                denied_addresses: [address].into(),
+                user_transaction_disabled: true,
+                ..Default::default()
+            },
+        };
+        let new_bytes =
+            bcs::to_bytes(&ConsensusTransactionKind::DenyRuleProposal(proposal)).unwrap();
+
+        let mut legacy_bytes = vec![11u8];
+        legacy_bytes.extend(
+            bcs::to_bytes(&(
+                authority,
+                42u64,
+                (
+                    BTreeSet::from([address]),
+                    BTreeSet::<ObjectId>::new(),
+                    BTreeSet::<ObjectId>::new(),
+                    false, // package_publish_disabled
+                    false, // package_upgrade_disabled
+                    false, // shared_object_disabled
+                    true,  // user_transaction_disabled
+                    false, // receiving_objects_disabled
+                    false, // move_authenticator_disabled
+                ),
+            ))
+            .unwrap(),
+        );
+
+        assert_eq!(
+            legacy_bytes, new_bytes,
+            "ConsensusTransactionKind::DenyRuleProposal wire format must not change"
         );
     }
 }

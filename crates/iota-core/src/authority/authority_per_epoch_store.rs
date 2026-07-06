@@ -3010,13 +3010,34 @@ impl AuthorityPerEpochStore {
     /// swaps it in. Returns true when the active set changed.
     pub fn update_active_deny_rules(&self) -> IotaResult<bool> {
         let proposals = self.load_deny_rule_proposals()?;
-        let rules = Self::compute_active_deny_rules(&proposals, self.committee());
-        if *self.active_deny_rules.load_full() == rules {
-            return Ok(false);
+        Ok(self.store_active_deny_rules(&proposals))
+    }
+
+    /// Derives the active set from `proposals` and swaps it in when changed.
+    /// Called from the quarantine push hook for every commit that records
+    /// proposals (next-commit activation).
+    fn store_active_deny_rules(
+        &self,
+        proposals: &BTreeMap<AuthorityName, DenyRuleProposal>,
+    ) -> bool {
+        let rules = Self::compute_active_deny_rules(proposals, self.committee());
+        if **self.active_deny_rules.load() == rules {
+            return false;
         }
-        info!(?rules, "active deny rules changed");
+        info!(
+            denied_addresses = rules.denied_addresses.len(),
+            denied_objects = rules.denied_objects.len(),
+            denied_packages = rules.denied_packages.len(),
+            package_publish_disabled = rules.package_publish_disabled,
+            package_upgrade_disabled = rules.package_upgrade_disabled,
+            shared_object_disabled = rules.shared_object_disabled,
+            user_transaction_disabled = rules.user_transaction_disabled,
+            receiving_objects_disabled = rules.receiving_objects_disabled,
+            move_authenticator_disabled = rules.move_authenticator_disabled,
+            "active deny rules changed"
+        );
         self.active_deny_rules.store(Arc::new(rules));
-        Ok(true)
+        true
     }
 
     /// Computes the stake-weighted aggregate of the given deny rule proposals:
@@ -3446,6 +3467,18 @@ impl AuthorityPerEpochStore {
                         "OverloadNotificationV1 from {:?} has invalid percentage {}",
                         authority.concise(),
                         percentage
+                    );
+                    return None;
+                }
+            }
+            SequencedConsensusTransactionKind::External(ConsensusTransaction {
+                kind: ConsensusTransactionKind::DenyRuleProposal(proposal),
+                ..
+            }) => {
+                if transaction.sender_authority() != proposal.authority {
+                    warn!(
+                        "DenyRuleProposal authority {} does not match its author from consensus {}",
+                        proposal.authority, transaction.certificate_author_index
                     );
                     return None;
                 }
@@ -5002,6 +5035,33 @@ impl AuthorityPerEpochStore {
                         "Ignoring OverloadNotificationV1 from {:?} because of end of epoch",
                         authority.concise()
                     );
+                }
+                Ok(ConsensusTransactionResult::ConsensusMessage)
+            }
+            SequencedConsensusTransactionKind::External(ConsensusTransaction {
+                kind: ConsensusTransactionKind::DenyRuleProposal(proposal),
+                ..
+            }) => {
+                if !self.protocol_config().deny_rule_governance() {
+                    debug!(
+                        "Ignoring DenyRuleProposal from {:?}: deny rule governance is disabled",
+                        proposal.authority.concise()
+                    );
+                } else if !self
+                    .get_reconfig_state_read_lock_guard()
+                    .should_accept_consensus_certs()
+                {
+                    debug!(
+                        "Ignoring DenyRuleProposal from {:?} because of end of epoch",
+                        proposal.authority.concise()
+                    );
+                } else if self.should_record_deny_rule_proposal(proposal) {
+                    debug!(
+                        "Received DenyRuleProposal from {:?} with generation {}",
+                        proposal.authority.concise(),
+                        proposal.generation
+                    );
+                    output.record_deny_rule_proposal(proposal.clone());
                 }
                 Ok(ConsensusTransactionResult::ConsensusMessage)
             }

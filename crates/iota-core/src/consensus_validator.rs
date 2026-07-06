@@ -140,6 +140,15 @@ impl IotaTxValidator {
                         )));
                     }
                 }
+
+                ConsensusTransactionKind::DenyRuleProposal(_) => {
+                    if !self.epoch_store.protocol_config().deny_rule_governance() {
+                        return Err(IotaError::UnsupportedFeature {
+                            error: "DenyRuleProposal not supported at current protocol version"
+                                .into(),
+                        });
+                    }
+                }
             }
         }
 
@@ -434,6 +443,11 @@ mod tests {
                 ConsensusTransactionKind::OverloadNotificationV1(_, _, _) => {
                     Some(config.enable_pcool_flow())
                 }
+
+                // Gated behind `deny_rule_governance`.
+                ConsensusTransactionKind::DenyRuleProposal(_) => {
+                    Some(config.deny_rule_governance())
+                }
             }
         }
 
@@ -492,6 +506,16 @@ mod tests {
             (
                 "OverloadNotificationV1",
                 ConsensusTransactionKind::OverloadNotificationV1(authority, 0, 50),
+            ),
+            (
+                "DenyRuleProposal",
+                ConsensusTransactionKind::DenyRuleProposal(
+                    iota_types::deny_rule_governance::DenyRuleProposal {
+                        authority,
+                        generation: 0,
+                        proposed_rules: Default::default(),
+                    },
+                ),
             ),
         ];
 

@@ -244,9 +244,6 @@ impl ConsensusCommitOutput {
     }
 
     /// Records `proposal`, keeping the newest generation per authority.
-    // TODO(#10749): remove cfg(test) once the consensus handler records
-    // proposals.
-    #[cfg(test)]
     pub fn record_deny_rule_proposal(&mut self, proposal: DenyRuleProposal) {
         if self
             .deny_rule_proposals
@@ -643,7 +640,16 @@ impl ConsensusOutputQuarantine {
         self.insert_congestion_control_debts(&output);
         self.insert_processed_consensus_messages(&output);
         self.insert_owned_object_locks(&output);
+        let has_deny_rule_proposals = !output.deny_rule_proposals.is_empty();
         self.output_queue.push_back(output);
+
+        // Recompute the active deny rules whenever a commit recorded
+        // proposals, so the set applies from the next commit on. Computed
+        // inline: `epoch_store` methods that take the quarantine lock would
+        // self-deadlock here.
+        if has_deny_rule_proposals {
+            epoch_store.store_active_deny_rules(&self.current_deny_rule_proposals());
+        }
 
         self.metrics
             .consensus_quarantine_queue_size
