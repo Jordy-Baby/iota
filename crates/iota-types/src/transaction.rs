@@ -26,7 +26,7 @@ use iota_sdk_types::{
     crypto::{Intent, IntentMessage, IntentScope},
 };
 pub use iota_sdk_types::{
-    GasPayment as GasData, SharedObjectReference as SharedObjectRef, SystemPackage,
+    GasPayment as GasData, SharedObjectReference as SharedObjectRef,
     Transaction as TransactionData, TransactionV1 as TransactionDataV1,
 };
 use itertools::Either;

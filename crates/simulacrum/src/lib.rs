@@ -31,7 +31,9 @@ use iota_config::{
 };
 use iota_node_storage::{GrpcIndexes, GrpcStateReader};
 use iota_protocol_config::ProtocolVersion;
-use iota_sdk_types::{Address, EndOfEpochTransactionKind, ObjectId, StructTag, TransactionKind};
+use iota_sdk_types::{
+    Address, EndOfEpochTransactionKind, ObjectId, StructTag, SystemPackage, TransactionKind,
+};
 use iota_storage::blob::{Blob, BlobEncoding};
 use iota_swarm_config::{
     genesis_config::AccountConfig, network_config::NetworkConfig,
@@ -304,7 +306,7 @@ impl<R, S: store::SimulatorStore> Simulacrum<R, S> {
         let epoch_start_timestamp_ms = inner.store.get_clock().timestamp_ms();
         drop(inner);
 
-        let next_epoch_system_package_bytes: Vec<iota_types::transaction::SystemPackage> = vec![];
+        let next_epoch_system_package_bytes: Vec<SystemPackage> = vec![];
         let kinds = vec![EndOfEpochTransactionKind::new_change_epoch_v3(
             next_epoch,
             next_epoch_protocol_version.as_u64(),

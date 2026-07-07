@@ -19,7 +19,8 @@ mod checked {
     use iota_sdk_types::{
         Address, Argument, ChangeEpoch, ChangeEpochV2, ChangeEpochV3, ChangeEpochV4, Command,
         EndOfEpochTransactionKind, ExecutionStatus, GenesisTransaction, Identifier, ObjectId,
-        ProgrammableTransaction, RandomnessStateUpdate, TransactionKind, gas::GasCostSummary,
+        ProgrammableTransaction, RandomnessStateUpdate, SystemPackage, TransactionKind,
+        gas::GasCostSummary,
     };
     #[cfg(msim)]
     use iota_types::iota_system_state::advance_epoch_result_injection::maybe_modify_result;
@@ -49,7 +50,7 @@ mod checked {
         randomness_state::RANDOMNESS_STATE_UPDATE_FUNCTION_NAME,
         storage::{BackingStore, Storage},
         transaction::{
-            CallArg, CheckedInputObjects, GasData, InputObjects, SharedObjectRef, SystemPackage,
+            CallArg, CheckedInputObjects, GasData, InputObjects, SharedObjectRef,
             TransactionKindExt,
         },
     };
