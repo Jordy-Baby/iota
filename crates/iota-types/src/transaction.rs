@@ -21,13 +21,13 @@ use iota_sdk_types::{
     ConsensusDeterminedVersionAssignments, Digest, EndOfEpochTransactionKind, Event, GenesisObject,
     GenesisTransaction, Identifier, Input, MakeMoveVector, MergeCoins, MoveCall, ObjectId,
     ObjectReference, Owner, ProgrammableTransaction, Publish, RandomnessRound,
-    RandomnessStateUpdate, SplitCoins, TransactionExpiration, TransactionKind, TransferObjects,
-    TypeTag, Upgrade,
+    RandomnessStateUpdate, SplitCoins, TransactionExpiration, TransactionKind, TransactionV1,
+    TransferObjects, TypeTag, Upgrade,
     crypto::{Intent, IntentMessage, IntentScope},
 };
 pub use iota_sdk_types::{
     GasPayment as GasData, SharedObjectReference as SharedObjectRef, SystemPackage,
-    Transaction as TransactionData, TransactionV1 as TransactionDataV1,
+    Transaction as TransactionData,
 };
 use itertools::Either;
 use nonempty::{NonEmpty, nonempty};
@@ -1409,7 +1409,7 @@ impl TransactionDataAPI for TransactionData {
     fn new_system_transaction(kind: TransactionKind) -> TransactionData {
         assert!(kind.is_system());
         let sender = Address::ZERO;
-        TransactionData::V1(TransactionDataV1 {
+        TransactionData::V1(TransactionV1 {
             kind,
             sender,
             gas_payment: GasData {
@@ -1433,7 +1433,7 @@ impl TransactionDataAPI for TransactionData {
         gas_budget: u64,
         gas_price: u64,
     ) -> TransactionData {
-        TransactionData::V1(TransactionDataV1 {
+        TransactionData::V1(TransactionV1 {
             kind,
             sender,
             gas_payment: GasData {
@@ -1471,7 +1471,7 @@ impl TransactionDataAPI for TransactionData {
         gas_price: u64,
         gas_sponsor: Address,
     ) -> TransactionData {
-        TransactionData::V1(TransactionDataV1 {
+        TransactionData::V1(TransactionV1 {
             kind,
             sender,
             gas_payment: GasData {
@@ -1489,7 +1489,7 @@ impl TransactionDataAPI for TransactionData {
         sender: Address,
         gas_data: GasData,
     ) -> TransactionData {
-        TransactionData::V1(TransactionDataV1 {
+        TransactionData::V1(TransactionV1 {
             kind,
             sender,
             gas_payment: gas_data,
