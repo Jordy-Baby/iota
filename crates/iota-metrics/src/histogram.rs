@@ -428,7 +428,16 @@ mod tests {
 
     #[tokio::test]
     async fn histogram_test() {
-        let registry = Registry::new();
+        // The derived histogram metrics are untagged (`debug`), so an
+        // explicitly permissive filter keeps them in the gather output.
+        let registry = Registry::new_custom(
+            None,
+            None,
+            Some(std::sync::Arc::new(prometheus_filtered::Filter::resolve(
+                Some("trace"),
+            ))),
+        )
+        .unwrap();
         let histogram = HistogramVec::new_in_registry_with_percentiles(
             "test",
             "xx",
