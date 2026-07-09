@@ -13,6 +13,7 @@ use axum::{
 };
 use base64::Engine;
 use humantime::parse_duration;
+use iota_metrics::MetricGroups;
 use iota_sdk_types::RandomnessRound;
 use iota_types::{
     base_types::AuthorityName,
@@ -76,6 +77,24 @@ use crate::IotaNode;
 // Reconfigure traffic control policy
 //
 //  $ curl 'http://127.0.0.1:1337/traffic-control?error_threshold=100&spam_threshold=100&dry_run=true'
+//
+// View the current Prometheus metrics filter.
+//
+//   $ curl 'http://127.0.0.1:1337/metrics-filter'
+//
+// Change which metrics the /metrics endpoint exposes. Patterns may be group
+// names from the `metrics.groups` config section
+// or raw METRICS_FILTER-style patterns. All metrics are always
+// collected, so exposure can be moved freely — `off` included — at runtime;
+// the only exception is the `hardware` group, whose collector is only
+// registered at startup.
+//
+//   $ curl -X POST 'http://127.0.0.1:1337/metrics-filter' -d 'consensus=off,typed_store=warn'
+//
+// Reset the metrics filter to the startup configuration (node config + the
+// METRICS_FILTER env var).
+//
+//   $ curl -X POST 'http://127.0.0.1:1337/reset-metrics-filter'
 
 const LOGGING_ROUTE: &str = "/logging";
 const TRACING_ROUTE: &str = "/enable-tracing";
@@ -90,10 +109,13 @@ const RANDOMNESS_INJECT_PARTIAL_SIGS_ROUTE: &str = "/randomness-inject-partial-s
 const RANDOMNESS_INJECT_FULL_SIG_ROUTE: &str = "/randomness-inject-full-sig";
 const FLAMEGRAPH_ROUTE: &str = "/flamegraph";
 const TRAFFIC_CONTROL: &str = "/traffic-control";
+const METRICS_FILTER_ROUTE: &str = "/metrics-filter";
+const METRICS_FILTER_RESET_ROUTE: &str = "/reset-metrics-filter";
 
 struct AppState {
     node: Arc<IotaNode>,
     tracing_handle: TracingHandle,
+    metrics_filter: Arc<prometheus_filtered::Filter>,
 }
 
 pub async fn run_admin_server(
@@ -104,6 +126,7 @@ pub async fn run_admin_server(
     let filter = tracing_handle.get_log().unwrap();
 
     let app_state = AppState {
+        metrics_filter: node.metrics_filter(),
         node,
         tracing_handle,
     };
@@ -135,6 +158,9 @@ pub async fn run_admin_server(
         )
         .route(FLAMEGRAPH_ROUTE, get(flamegraph))
         .route(TRAFFIC_CONTROL, post(traffic_control))
+        .route(METRICS_FILTER_ROUTE, get(get_metrics_filter))
+        .route(METRICS_FILTER_ROUTE, post(set_metrics_filter))
+        .route(METRICS_FILTER_RESET_ROUTE, post(reset_metrics_filter))
         .with_state(Arc::new(app_state));
 
     info!(
@@ -580,5 +606,95 @@ async fn traffic_control(
             ),
         ),
         Err(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
+    }
+}
+
+async fn get_metrics_filter(State(state): State<Arc<AppState>>) -> (StatusCode, String) {
+    (StatusCode::OK, state.metrics_filter.runtime_filter_string())
+}
+
+async fn set_metrics_filter(
+    State(state): State<Arc<AppState>>,
+    new_filter: String,
+) -> (StatusCode, String) {
+    let expanded = match expand_metric_group_directives(&new_filter) {
+        Ok(expanded) => expanded,
+        Err(err) => return (StatusCode::BAD_REQUEST, err),
+    };
+    match state.metrics_filter.set_runtime_filter(&expanded) {
+        Ok(()) => {
+            info!(filter =% expanded, "Metrics filter updated");
+            (
+                StatusCode::OK,
+                format!("metrics filter set to {expanded:?}\n"),
+            )
+        }
+        Err(err) => (StatusCode::BAD_REQUEST, err),
+    }
+}
+
+async fn reset_metrics_filter(State(state): State<Arc<AppState>>) -> (StatusCode, String) {
+    state.metrics_filter.reset_runtime_filter();
+    info!("Metrics filter reset to startup configuration");
+    (
+        StatusCode::OK,
+        "metrics filter reset to startup configuration\n".into(),
+    )
+}
+
+/// Expands metric group names in a
+/// `pattern=LEVEL` directive string into their module-path directives; other
+/// patterns stays as it is. Rejects the `hardware` group, whose level
+/// is only read once at startup.
+fn expand_metric_group_directives(filter: &str) -> Result<String, String> {
+    let mut directives = Vec::new();
+    for part in prometheus_filtered::directive_parts(filter) {
+        let (pattern, level) = match part.rfind('=') {
+            Some(eq) => (part[..eq].trim(), part[eq + 1..].trim()),
+            None => ("", part),
+        };
+        if pattern == "hardware" {
+            return Err(
+                "the hardware group is registered once at startup and cannot be changed at \
+                 runtime\n"
+                    .into(),
+            );
+        }
+        match MetricGroups::modules_for_group(pattern) {
+            Some(modules) => {
+                directives.extend(modules.iter().map(|module| format!("{module}={level}")));
+            }
+            None => directives.push(part.to_owned()),
+        }
+    }
+    Ok(directives.join(","))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::expand_metric_group_directives;
+
+    #[test]
+    fn group_names_expand_to_module_directives() {
+        assert_eq!(
+            expand_metric_group_directives("checkpoints=off,epoch=debug").unwrap(),
+            "iota_core::checkpoints=off,iota_core::epoch::epoch_metrics=debug"
+        );
+    }
+
+    #[test]
+    fn non_group_patterns_pass_through() {
+        // Raw module paths, metric-name prefixes, and bare global levels are
+        // kept verbatim; level validity is checked when the filter is applied.
+        assert_eq!(
+            expand_metric_group_directives("typed_store=warn, uptime=off ,trace").unwrap(),
+            "typed_store=warn,uptime=off,trace"
+        );
+        assert_eq!(expand_metric_group_directives("").unwrap(), "");
+    }
+
+    #[test]
+    fn hardware_group_is_rejected() {
+        expand_metric_group_directives("consensus=off,hardware=off").unwrap_err();
     }
 }

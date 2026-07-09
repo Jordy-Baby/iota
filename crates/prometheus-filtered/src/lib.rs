@@ -23,7 +23,11 @@
 //! The directives act as **exposure**
 //! thresholds deciding which metrics [`Registry::gather`] includes in its
 //! output (`off` exposes none of the matched metrics). Metrics matched by no
-//! directive are exposed up to the `info` level.
+//! directive are exposed up to the `info` level. The exposure
+//! directives are initialized to a copy of the startup
+//! directives and can be replaced while the process runs via
+//! [`Filter::set_runtime_filter`] — the node admin server's `/metrics-filter`
+//! endpoint does this; `/reset-metrics-filter` restores the startup copy.
 
 use std::{
     collections::HashMap,
@@ -505,21 +509,29 @@ struct FilterDirective {
 }
 
 /// Parses and evaluates `METRICS_FILTER`-style directives.
-///
-/// Filter string: comma-separated `pattern=LEVEL` directives, last-match
-/// wins, a metric is exposed when its own level is at or below the threshold.
 #[derive(Default)]
 pub struct Filter {
+    /// The startup directives.
     directives: Vec<FilterDirective>,
+    /// The raw string `directives` was parsed from.
+    raw: String,
+    runtime: RwLock<RuntimeDirectives>,
 }
 
-/// Parses one `pattern=LEVEL` directive. `None` for an empty segment or an
-/// invalid level (dropped with a warning).
-fn parse_directive(part: &str) -> Option<FilterDirective> {
-    let part = part.trim();
-    if part.is_empty() {
-        return None;
-    }
+#[derive(Default)]
+struct RuntimeDirectives {
+    directives: Vec<FilterDirective>,
+    raw: String,
+}
+
+/// Splits a `METRICS_FILTER`-style string into its non-empty, trimmed
+/// directive segments.
+pub fn directive_parts(s: &str) -> impl Iterator<Item = &str> + '_ {
+    s.split(',').map(str::trim).filter(|part| !part.is_empty())
+}
+
+/// Parses one `pattern=LEVEL` directive.
+fn parse_directive(part: &str) -> std::result::Result<FilterDirective, String> {
     let (pattern, value) = if let Some(eq) = part.rfind('=') {
         (part[..eq].trim().to_owned(), part[eq + 1..].trim())
     } else {
@@ -532,14 +544,13 @@ fn parse_directive(part: &str) -> Option<FilterDirective> {
         "debug" => 3,
         "trace" => 4,
         other => {
-            warn!(
-                "dropping prometheus filter directive {part:?}: invalid level {other:?}, \
-                 expected one of off/warn/info/debug/trace"
-            );
-            return None;
+            return Err(format!(
+                "invalid level {other:?} in directive {part:?}: expected one of \
+                 off/warn/info/debug/trace"
+            ));
         }
     };
-    Some(FilterDirective { pattern, threshold })
+    Ok(FilterDirective { pattern, threshold })
 }
 
 /// Evaluates `directives` for a metric, returning the last matching
@@ -566,15 +577,52 @@ fn threshold_for(directives: &[FilterDirective], name: &str, module: &str) -> u8
 
 impl Filter {
     fn parse(s: &str) -> Self {
-        let directives = s.split(',').filter_map(parse_directive).collect();
-        Self { directives }
+        let directives: Vec<FilterDirective> = directive_parts(s)
+            .filter_map(|part| {
+                parse_directive(part)
+                    .map_err(|err| warn!("dropping prometheus filter directive: {err}"))
+                    .ok()
+            })
+            .collect();
+        Self {
+            runtime: RwLock::new(RuntimeDirectives {
+                directives: directives.clone(),
+                raw: s.to_owned(),
+            }),
+            directives,
+            raw: s.to_owned(),
+        }
     }
 
-    /// Returns `true` if a registered metric named `name` in `module` at
-    /// verbosity `level` should be exposed when gathering.
+    /// Evaluates the runtime directives and determine if it should be exposed
+    /// when gathering.
     #[inline]
     pub fn is_exposed(&self, name: &str, module: &str, level: MetricLevel) -> bool {
-        threshold_for(&self.directives, name, module) >= level.verbosity()
+        let runtime = self.runtime.read().unwrap();
+        threshold_for(&runtime.directives, name, module) >= level.verbosity()
+    }
+
+    pub fn runtime_filter_string(&self) -> String {
+        self.runtime.read().unwrap().raw.clone()
+    }
+
+    /// Replaces the runtime directives, which control the metrics exposed
+    /// when gathering. Rejects the whole update if any directive is invalid.
+    pub fn set_runtime_filter(&self, s: &str) -> std::result::Result<(), String> {
+        let directives = directive_parts(s)
+            .map(parse_directive)
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        let mut runtime = self.runtime.write().unwrap();
+        runtime.directives = directives;
+        runtime.raw = s.to_owned();
+        Ok(())
+    }
+
+    /// Restores the runtime directives to the startup (config + env) set.
+    pub fn reset_runtime_filter(&self) {
+        let mut runtime = self.runtime.write().unwrap();
+        runtime.directives = self.directives.clone();
+        runtime.raw = self.raw.clone();
     }
 
     /// Resolves the metrics filter from `fallback` (the node config)
@@ -616,7 +664,7 @@ pub struct Registry {
 
 impl Registry {
     /// Creates a registry whose filter is resolved from the `METRICS_FILTER`
-    /// env var (permissive when unset).
+    /// env var (the info default when unset).
     pub fn new() -> Self {
         Self {
             inner: prometheus::Registry::new(),
@@ -707,7 +755,7 @@ impl std::fmt::Debug for Registry {
 }
 
 /// Returns the process-wide `Filter` of the [`default_registry`], resolved
-/// once from `METRICS_FILTER` (permissive when unset).
+/// once from `METRICS_FILTER` (the info default when unset).
 fn default_filter() -> &'static Arc<Filter> {
     static INSTANCE: OnceLock<Arc<Filter>> = OnceLock::new();
     INSTANCE.get_or_init(|| Arc::new(Filter::resolve(None)))
@@ -1105,7 +1153,7 @@ mod tests {
         for alias in ["on", "true", "1", "false", "0"] {
             let filter = super::Filter::parse(&format!("authority={alias}"));
             assert!(
-                filter.is_exposed("authority", "m", Info),
+                filter.is_exposed("authority", "m", super::MetricLevel::Info),
                 "{alias} should be dropped as invalid, leaving the default"
             );
         }
@@ -1248,7 +1296,8 @@ mod gather_filter_tests {
     #[test]
     fn off_directive_hides_but_still_registers() {
         let reg = registry("g_hidden=off");
-        let g = crate::register_int_gauge_with_registry!("g_hidden", "h", &reg).unwrap();
+        let g = crate::register_int_gauge_with_registry!("g_hidden", "h", &reg; MetricLevel::Warn)
+            .unwrap();
         // Registered (a disabled wrapper would print "(disabled)") and
         // collecting, but absent from gather output.
         assert_eq!(format!("{g:?}"), "GenericGauge");
@@ -1292,6 +1341,111 @@ mod gather_filter_tests {
         // Not registered through the macros -> no module/level recorded ->
         // the exposure filter does not apply.
         assert_eq!(gathered_names(&reg), ["g_direct"]);
+    }
+}
+
+#[cfg(test)]
+mod runtime_filter_tests {
+    use super::{Filter, MetricLevel, Registry};
+
+    fn registry(filter: &str) -> Registry {
+        Registry::new_custom(None, None, Some(std::sync::Arc::new(Filter::parse(filter)))).unwrap()
+    }
+
+    fn gathered_names(registry: &Registry) -> Vec<String> {
+        let mut names: Vec<_> = registry
+            .gather()
+            .iter()
+            .map(|f| f.name().to_owned())
+            .collect();
+        names.sort();
+        names
+    }
+
+    #[test]
+    fn runtime_filter_hides_and_restores_registered_metrics() {
+        let reg = registry("");
+        crate::register_int_gauge_with_registry!(
+            "g_consensus", "h", &reg; MetricLevel::Warn
+        )
+        .unwrap();
+        crate::register_int_gauge_with_registry!("g_other", "h", &reg; MetricLevel::Warn).unwrap();
+        assert_eq!(gathered_names(&reg), ["g_consensus", "g_other"]);
+
+        // Hide by metric-name prefix at runtime; the metric stays registered.
+        let filter = reg.filter();
+        filter.set_runtime_filter("g_consensus=off").unwrap();
+        assert_eq!(gathered_names(&reg), ["g_other"]);
+
+        // Reset restores the startup (empty) directives.
+        filter.reset_runtime_filter();
+        assert_eq!(gathered_names(&reg), ["g_consensus", "g_other"]);
+    }
+
+    #[test]
+    fn raising_runtime_level_exposes_collected_metrics() {
+        // A `warn` startup threshold hides the debug metric …
+        let reg = registry("runtime_filter_tests=warn");
+        crate::register_int_gauge_with_registry!("g_warn", "h", &reg; MetricLevel::Warn).unwrap();
+        let g_debug = crate::register_int_gauge_with_registry!("g_debug", "h", &reg).unwrap();
+        g_debug.set(7);
+        assert_eq!(gathered_names(&reg), ["g_warn"]);
+
+        // … so raising the exposure level at runtime reveals it, with the
+        // values it collected while hidden.
+        reg.filter()
+            .set_runtime_filter("runtime_filter_tests=debug")
+            .unwrap();
+        assert_eq!(gathered_names(&reg), ["g_debug", "g_warn"]);
+        let family = reg
+            .gather()
+            .into_iter()
+            .find(|f| f.name() == "g_debug")
+            .unwrap();
+        assert_eq!(family.get_metric()[0].get_gauge().value() as i64, 7);
+    }
+
+    #[test]
+    fn startup_off_metrics_can_be_enabled() {
+        // A startup `off` directive only hides the metric, so clearing the
+        // runtime filter exposes it, with the value it collected while hidden.
+        let reg = registry("g_hidden=off");
+        let g = crate::register_int_gauge_with_registry!("g_hidden", "h", &reg; MetricLevel::Warn)
+            .unwrap();
+        g.set(9);
+        assert_eq!(gathered_names(&reg), Vec::<String>::new());
+
+        reg.filter().set_runtime_filter("").unwrap();
+        assert_eq!(gathered_names(&reg), ["g_hidden"]);
+        let family = &reg.gather()[0];
+        assert_eq!(family.get_metric()[0].get_gauge().value() as i64, 9);
+    }
+
+    #[test]
+    fn runtime_filter_starts_as_startup_directives() {
+        let filter = Filter::parse("authority=off");
+        assert_eq!(filter.runtime_filter_string(), "authority=off");
+        assert!(!filter.is_exposed("x", "iota_core::authority", MetricLevel::Warn));
+
+        filter.set_runtime_filter("authority=warn").unwrap();
+        assert_eq!(filter.runtime_filter_string(), "authority=warn");
+        assert!(filter.is_exposed("x", "iota_core::authority", MetricLevel::Warn));
+        assert!(!filter.is_exposed("x", "iota_core::authority", MetricLevel::Debug));
+
+        filter.reset_runtime_filter();
+        assert_eq!(filter.runtime_filter_string(), "authority=off");
+    }
+
+    #[test]
+    fn set_runtime_filter_rejects_invalid_directives() {
+        let filter = Filter::parse("authority=off");
+        let err = filter
+            .set_runtime_filter("authority=warn,bogus=nope")
+            .unwrap_err();
+        assert!(err.contains("bogus=nope"), "unexpected error: {err}");
+        // The failed update leaves the runtime directives unchanged.
+        assert_eq!(filter.runtime_filter_string(), "authority=off");
+        assert!(!filter.is_exposed("x", "iota_core::authority", MetricLevel::Warn));
     }
 }
 
