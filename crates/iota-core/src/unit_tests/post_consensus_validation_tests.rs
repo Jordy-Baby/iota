@@ -2062,14 +2062,14 @@ async fn test_v2_transient_missing_input_must_not_drop() {
     let epoch_store = authority.epoch_store_for_testing();
     let rgp = authority.reference_gas_price_for_testing().unwrap();
 
-    let object_ref = authority.get_object(&object_id).await.unwrap().object_ref();
-    let gas_ref = authority.get_object(&gas_id).await.unwrap().object_ref();
+    let object_ref = authority.get_object(&object_id).unwrap().object_ref();
+    let gas_ref = authority.get_object(&gas_id).unwrap().object_ref();
 
     // Reference the object at version+1 — the version a predecessor tx WOULD have
     // produced but that is absent from this node's store.
     // `read_objects_for_validation` (step 1 of
     // `check_coin_deny_list_for_attested_tx`) returns ObjectNotFound for it.
-    let absent_ref = ObjectRef::new(
+    let absent_ref = ObjectReference::new(
         object_ref.object_id,
         object_ref.version.next().unwrap(),
         object_ref.digest,
@@ -2139,14 +2139,14 @@ async fn test_v1_transient_missing_input_must_not_drop() {
     let epoch_store = authority.epoch_store_for_testing();
     let rgp = authority.reference_gas_price_for_testing().unwrap();
 
-    let object_ref = authority.get_object(&object_id).await.unwrap().object_ref();
-    let gas_ref = authority.get_object(&gas_id).await.unwrap().object_ref();
+    let object_ref = authority.get_object(&object_id).unwrap().object_ref();
+    let gas_ref = authority.get_object(&gas_id).unwrap().object_ref();
 
     // Reference the object at version+1 — the version a predecessor tx WOULD have
     // produced but that is absent from this node's store.
     // `read_objects_for_validation` (inside
     // `handle_transaction_validation_checks`) returns ObjectNotFound for it.
-    let absent_ref = ObjectRef::new(
+    let absent_ref = ObjectReference::new(
         object_ref.object_id,
         object_ref.version.next().unwrap(),
         object_ref.digest,
