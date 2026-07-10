@@ -176,6 +176,8 @@ pub const PROTOCOL_VERSION_IIP8: u64 = 20;
 // Version 31: Rebuild the framework binaries for the latest iota_system
 //             validator set changes.
 //             Enable validator metadata verification v2.
+//             Move validator stake thresholds (joining stake, low/very low
+//             stake thresholds, grace period) into the protocol config.
 #[derive(Copy, Clone, Debug, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ProtocolVersion(u64);
 
@@ -1418,6 +1420,27 @@ pub struct ProtocolConfig {
     /// Number of committed subdags between leader-schedule recomputations.
     /// When unset, defaults to 300.
     consensus_commits_per_schedule: Option<u32>,
+
+    /// Minimum stake, in nanos, a validator candidate needs to join the
+    /// active set. Supersedes
+    /// `SystemParametersV1::min_validator_joining_stake`.
+    min_validator_joining_stake: Option<u64>,
+
+    /// Active validators with stake, in nanos, below this threshold are
+    /// considered at risk and are removed after
+    /// `validator_low_stake_grace_period` consecutive epochs below it.
+    /// Supersedes `SystemParametersV1::validator_low_stake_threshold`.
+    validator_low_stake_threshold: Option<u64>,
+
+    /// Active validators with stake, in nanos, below this threshold are
+    /// removed at the next epoch boundary without a grace period.
+    /// Supersedes `SystemParametersV1::validator_very_low_stake_threshold`.
+    validator_very_low_stake_threshold: Option<u64>,
+
+    /// Number of consecutive epochs a validator may stay below
+    /// `validator_low_stake_threshold` before being removed.
+    /// Supersedes `SystemParametersV1::validator_low_stake_grace_period`.
+    validator_low_stake_grace_period: Option<u64>,
 }
 
 // feature flags
@@ -2414,6 +2437,10 @@ impl ProtocolConfig {
             auth_context_replace_cost_per_byte: None,
             auth_context_authenticator_function_info_v1_cost_base: None,
             consensus_commits_per_schedule: None,
+            min_validator_joining_stake: None,
+            validator_low_stake_threshold: None,
+            validator_very_low_stake_threshold: None,
+            validator_low_stake_grace_period: None,
             // When adding a new constant, set it to None in the earliest version, like this:
             // new_constant: None,
         };
@@ -2977,6 +3004,14 @@ impl ProtocolConfig {
                 }
                 31 => {
                     cfg.feature_flags.validator_metadata_verify_v2 = true;
+
+                    // Identical to the genesis SystemParametersV1 values on
+                    // all existing networks; enforcement moves from on-chain
+                    // state to the protocol config.
+                    cfg.min_validator_joining_stake = Some(2_000_000_000_000_000);
+                    cfg.validator_low_stake_threshold = Some(1_500_000_000_000_000);
+                    cfg.validator_very_low_stake_threshold = Some(1_000_000_000_000_000);
+                    cfg.validator_low_stake_grace_period = Some(7);
                 }
                 // Use this template when making changes:
                 //
