@@ -1,9 +1,3 @@
-is_feature_enabled
-	public(package) fun
-	0x3::protocol_config
-get_attr
-	public(package) fun
-	0x3::protocol_config
 UnverifiedValidatorOperationCap
 	public struct
 	0x3::validator_cap
@@ -679,6 +673,12 @@ select_committee_members_from_eligible
 process_new_committee
 	public(package) fun
 	0x3::validator_set
+is_feature_enabled
+	public(package) fun
+	0x3::protocol_config
+get_attr
+	public(package) fun
+	0x3::protocol_config
 StorageFundV1
 	public struct
 	0x3::storage_fund
