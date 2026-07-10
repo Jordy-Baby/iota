@@ -43,7 +43,7 @@ use iota_sdk_types::ObjectReference;
 use iota_types::{
     base_types::TransactionDigest,
     error::{IotaError, IotaResult},
-    messages_consensus::{ConsensusTransaction, ConsensusTransactionKind},
+    messages_consensus::ConsensusTransactionKind,
     transaction::{InputObjectKind, VerifiedTransaction},
 };
 use tracing::{debug, warn};
@@ -124,11 +124,25 @@ pub async fn validate_and_resolve_conflicts(
         // Only validate UserTransactionV1; pass everything else through
         // unchanged.
         let transaction = match &tx.0.transaction {
-            SequencedConsensusTransactionKind::External(ConsensusTransaction {
-                kind: ConsensusTransactionKind::UserTransactionV1(t),
-                ..
-            }) => t,
-            _ => continue,
+            // Listed exhaustively (no `_` arm) so a new user-transaction kind must
+            // be classified here rather than silently skipping validation.
+            SequencedConsensusTransactionKind::External(ext) => match &ext.kind {
+                ConsensusTransactionKind::UserTransactionV1(t) => t,
+                // Certified transactions, system transactions, and internal consensus
+                // message pass through unchanged.
+                ConsensusTransactionKind::CertifiedTransaction(_)
+                | ConsensusTransactionKind::CheckpointSignature(_)
+                | ConsensusTransactionKind::EndOfPublish(_)
+                | ConsensusTransactionKind::CapabilityNotificationV1(_)
+                | ConsensusTransactionKind::SignedCapabilityNotificationV1(_)
+                | ConsensusTransactionKind::RandomnessDkgMessage(..)
+                | ConsensusTransactionKind::RandomnessDkgConfirmation(..)
+                | ConsensusTransactionKind::MisbehaviorReport(_)
+                | ConsensusTransactionKind::OverloadNotificationV1(..) => continue,
+                #[allow(deprecated)]
+                ConsensusTransactionKind::NewJWKFetchedDeprecated => continue,
+            },
+            SequencedConsensusTransactionKind::System(_) => continue,
         };
 
         let digest = *transaction.digest();
@@ -349,16 +363,32 @@ fn find_existing_lock(
 fn extract_owned_input_objects(
     tx: &VerifiedSequencedConsensusTransaction,
 ) -> IotaResult<Vec<ObjectReference>> {
-    let transaction_data = match &tx.0.transaction {
-        SequencedConsensusTransactionKind::External(ConsensusTransaction {
-            kind: ConsensusTransactionKind::UserTransactionV1(transaction),
-            ..
-        }) => transaction.data(),
-        _ => {
-            return Err(IotaError::GenericAuthority {
-                error: "Expected UserTransactionV1 in extract_owned_input_objects".to_string(),
-            });
-        }
+    let transaction_data_opt = match &tx.0.transaction {
+        // Listed exhaustively (no `_` arm) so a new user-transaction kind must
+        // be classified here rather than silently returning the error below.
+        SequencedConsensusTransactionKind::External(ext) => match &ext.kind {
+            ConsensusTransactionKind::UserTransactionV1(transaction) => Some(transaction.data()),
+            // Not a raw user transaction - no owned inputs to extract here.
+            ConsensusTransactionKind::CertifiedTransaction(_)
+            | ConsensusTransactionKind::CheckpointSignature(_)
+            | ConsensusTransactionKind::EndOfPublish(_)
+            | ConsensusTransactionKind::CapabilityNotificationV1(_)
+            | ConsensusTransactionKind::SignedCapabilityNotificationV1(_)
+            | ConsensusTransactionKind::RandomnessDkgMessage(..)
+            | ConsensusTransactionKind::RandomnessDkgConfirmation(..)
+            | ConsensusTransactionKind::MisbehaviorReport(_)
+            | ConsensusTransactionKind::OverloadNotificationV1(..) => None,
+            #[allow(deprecated)]
+            ConsensusTransactionKind::NewJWKFetchedDeprecated => None,
+        },
+        SequencedConsensusTransactionKind::System(_) => None,
+    };
+    let transaction_data = if let Some(transaction_data) = transaction_data_opt {
+        transaction_data
+    } else {
+        return Err(IotaError::GenericAuthority {
+            error: "Expected UserTransactionV1 in extract_owned_input_objects".to_string(),
+        });
     };
 
     // Use SenderSignedData::input_objects() rather than
