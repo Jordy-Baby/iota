@@ -213,6 +213,9 @@ public fun advance_epoch_with_reward_amounts_return_rebate_and_max_committee_mem
         storage_rebate,
         non_refundable_storage_rebate,
         0,
+        1, // validator_low_stake_threshold, matches the test genesis parameters
+        0, // validator_very_low_stake_threshold
+        7, // validator_low_stake_grace_period
         0,
         max_committee_members_count,
         eligible_active_validators,
@@ -318,6 +321,9 @@ public fun advance_epoch_with_reward_amounts_and_slashing_rates(
         0,
         0,
         reward_slashing_rate,
+        1, // validator_low_stake_threshold, matches the test genesis parameters
+        0, // validator_very_low_stake_threshold
+        7, // validator_low_stake_grace_period
         0,
         max_committee_members_count,
         eligible_active_validators,
@@ -360,11 +366,61 @@ public fun advance_epoch_with_subsidy_and_scores(
         0,
         0,
         10000, // 100% slashing
+        1, // validator_low_stake_threshold, matches the test genesis parameters
+        0, // validator_very_low_stake_threshold
+        7, // validator_low_stake_grace_period
         0,
         max_committee_members_count,
         eligible_active_validators,
         scores,
         adjust_rewards_by_score,
+        ctx,
+    );
+    test_utils::destroy(storage_rebate);
+    test_scenario::return_shared(system_state);
+    scenario.next_epoch(@0x0);
+}
+
+/// Advances the epoch with explicit stake thresholds (in nanos) and no
+/// rewards, mirroring `advance_epoch` otherwise.
+public fun advance_epoch_with_stake_thresholds(
+    low_stake_threshold: u64,
+    very_low_stake_threshold: u64,
+    low_stake_grace_period: u64,
+    scenario: &mut Scenario,
+) {
+    scenario.next_tx(@0x0);
+    let new_epoch = scenario.ctx().epoch() + 1;
+    let mut system_state = scenario.take_shared<IotaSystemState>();
+    let ctx = scenario.ctx();
+
+    let eligible_active_validators = vector::tabulate!(
+        system_state.validators().active_validators_inner().length(),
+        |i| i,
+    );
+    let scores = vector::tabulate!(
+        system_state.committee_validator_addresses().length(),
+        |_| 65536u64,
+    );
+
+    let storage_rebate = system_state.advance_epoch_for_testing(
+        new_epoch,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        low_stake_threshold,
+        very_low_stake_threshold,
+        low_stake_grace_period,
+        0,
+        150, // max_committee_members_count, matches the other helpers' default
+        eligible_active_validators,
+        scores,
+        true,
         ctx,
     );
     test_utils::destroy(storage_rebate);

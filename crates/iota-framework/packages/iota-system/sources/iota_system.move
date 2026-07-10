@@ -54,6 +54,7 @@ use iota_system::iota_system_state_inner::{
     IotaSystemStateV1,
     IotaSystemStateV2
 };
+use iota_system::protocol_config;
 use iota_system::staking_pool::{StakedIota, PoolTokenExchangeRate};
 use iota_system::validator::ValidatorV1;
 use iota_system::validator_cap::UnverifiedValidatorOperationCap;
@@ -72,6 +73,12 @@ public struct IotaSystemState has key {
 
 const ENotSystemAddress: u64 = 0;
 const EWrongInnerVersion: u64 = 1;
+
+/// Protocol config parameter names, read via `protocol_config::get_attr`.
+const VALIDATOR_LOW_STAKE_THRESHOLD_PARAM: vector<u8> = b"validator_low_stake_threshold";
+const VALIDATOR_VERY_LOW_STAKE_THRESHOLD_PARAM: vector<u8> =
+    b"validator_very_low_stake_threshold";
+const VALIDATOR_LOW_STAKE_GRACE_PERIOD_PARAM: vector<u8> = b"validator_low_stake_grace_period";
 
 // ==== functions that can only be called by genesis ====
 
@@ -539,6 +546,15 @@ fun advance_epoch(
     let self = load_system_state_mut(wrapper);
     // ValidatorV1 will make a special system call with sender set as 0x0.
     assert!(ctx.sender() == @0x0, ENotSystemAddress);
+    let validator_low_stake_threshold: u64 = protocol_config::get_attr(
+        VALIDATOR_LOW_STAKE_THRESHOLD_PARAM,
+    );
+    let validator_very_low_stake_threshold: u64 = protocol_config::get_attr(
+        VALIDATOR_VERY_LOW_STAKE_THRESHOLD_PARAM,
+    );
+    let validator_low_stake_grace_period: u64 = protocol_config::get_attr(
+        VALIDATOR_LOW_STAKE_GRACE_PERIOD_PARAM,
+    );
     let storage_rebate = self.advance_epoch(
         new_epoch,
         next_protocol_version,
@@ -549,6 +565,9 @@ fun advance_epoch(
         storage_rebate,
         non_refundable_storage_fee,
         reward_slashing_rate,
+        validator_low_stake_threshold,
+        validator_very_low_stake_threshold,
+        validator_low_stake_grace_period,
         epoch_start_timestamp_ms,
         max_committee_members_count,
         eligible_active_validators,
@@ -773,6 +792,9 @@ public(package) fun advance_epoch_for_testing(
     storage_rebate: u64,
     non_refundable_storage_fee: u64,
     reward_slashing_rate: u64,
+    validator_low_stake_threshold: u64,
+    validator_very_low_stake_threshold: u64,
+    validator_low_stake_grace_period: u64,
     epoch_start_timestamp_ms: u64,
     max_committee_members_count: u64,
     eligible_active_validators: vector<u64>,
@@ -782,17 +804,21 @@ public(package) fun advance_epoch_for_testing(
 ): Balance<IOTA> {
     let storage_charge = balance::create_for_testing(storage_charge);
     let computation_charge = balance::create_for_testing(computation_charge);
-    let storage_rebate = advance_epoch(
+    let self = load_system_state_mut(wrapper);
+    assert!(ctx.sender() == @0x0, ENotSystemAddress);
+    let storage_rebate = self.advance_epoch(
+        new_epoch,
+        next_protocol_version,
         validator_subsidy,
         storage_charge,
         computation_charge,
         computation_charge_burned,
-        wrapper,
-        new_epoch,
-        next_protocol_version,
         storage_rebate,
         non_refundable_storage_fee,
         reward_slashing_rate,
+        validator_low_stake_threshold,
+        validator_very_low_stake_threshold,
+        validator_low_stake_grace_period,
         epoch_start_timestamp_ms,
         max_committee_members_count,
         eligible_active_validators,

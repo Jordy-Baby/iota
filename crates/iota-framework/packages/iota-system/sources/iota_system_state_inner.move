@@ -45,15 +45,17 @@ public struct SystemParametersV1 has store {
     /// config parameter; retained only for struct layout compatibility and
     /// no longer read.
     min_validator_joining_stake: u64,
-    /// Validators with stake amount below `validator_low_stake_threshold` are considered to
-    /// have low stake and will be escorted out of the validator set after being below this
-    /// threshold for more than `validator_low_stake_grace_period` number of epochs.
+    /// Deprecated: superseded by the `validator_low_stake_threshold` protocol
+    /// config parameter; retained only for struct layout compatibility and
+    /// no longer read.
     validator_low_stake_threshold: u64,
-    /// Validators with stake below `validator_very_low_stake_threshold` will be removed
-    /// immediately at epoch change, no grace period.
+    /// Deprecated: superseded by the `validator_very_low_stake_threshold`
+    /// protocol config parameter; retained only for struct layout
+    /// compatibility and no longer read.
     validator_very_low_stake_threshold: u64,
-    /// A validator can have stake below `validator_low_stake_threshold`
-    /// for this many epochs before being kicked out.
+    /// Deprecated: superseded by the `validator_low_stake_grace_period`
+    /// protocol config parameter; retained only for struct layout
+    /// compatibility and no longer read.
     validator_low_stake_grace_period: u64,
     /// Any extra fields that's not defined statically.
     extra_fields: Bag,
@@ -785,6 +787,9 @@ public(package) fun advance_epoch(
     mut storage_rebate_amount: u64,
     mut non_refundable_storage_fee_amount: u64,
     reward_slashing_rate: u64, // how much rewards are slashed to punish a validator, in bps.
+    validator_low_stake_threshold: u64,
+    validator_very_low_stake_threshold: u64,
+    validator_low_stake_grace_period: u64,
     epoch_start_timestamp_ms: u64, // Timestamp of the epoch start
     max_committee_members_count: u64,
     eligible_active_validators: vector<u64>,
@@ -843,9 +848,9 @@ public(package) fun advance_epoch(
             &mut total_validator_rewards,
             &mut self.validator_report_records,
             reward_slashing_rate,
-            self.parameters.validator_low_stake_threshold,
-            self.parameters.validator_very_low_stake_threshold,
-            self.parameters.validator_low_stake_grace_period,
+            validator_low_stake_threshold,
+            validator_very_low_stake_threshold,
+            validator_low_stake_grace_period,
             max_committee_members_count,
             eligible_active_validators,
             scores,
