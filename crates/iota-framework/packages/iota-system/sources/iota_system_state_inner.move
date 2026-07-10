@@ -13,6 +13,7 @@ use iota::system_admin_cap::IotaSystemAdminCap;
 use iota::table::Table;
 use iota::vec_map::{Self, VecMap};
 use iota::vec_set::{Self, VecSet};
+use iota_system::protocol_config;
 use iota_system::staking_pool::{PoolTokenExchangeRate, StakedIota};
 use iota_system::storage_fund::{Self, StorageFundV1};
 use iota_system::validator::{Self, ValidatorV1};
@@ -28,6 +29,9 @@ const ANY_VALIDATOR: u8 = 3;
 
 const SYSTEM_STATE_VERSION_V1: u64 = 1;
 
+/// Protocol config parameter names, read via `protocol_config::get_attr`.
+const MIN_VALIDATOR_JOINING_STAKE_PARAM: vector<u8> = b"min_validator_joining_stake";
+
 /// A list of system config parameters.
 public struct SystemParametersV1 has store {
     /// The duration of an epoch, in milliseconds.
@@ -37,7 +41,9 @@ public struct SystemParametersV1 has store {
     /// Maximum number of active validators at any moment.
     /// We do not allow the number of validators in any epoch to go above this.
     max_validator_count: u64,
-    /// Lower-bound on the amount of stake required to become a validator.
+    /// Deprecated: superseded by the `min_validator_joining_stake` protocol
+    /// config parameter; retained only for struct layout compatibility and
+    /// no longer read.
     min_validator_joining_stake: u64,
     /// Validators with stake amount below `validator_low_stake_threshold` are considered to
     /// have low stake and will be escorted out of the validator set after being below this
@@ -371,7 +377,10 @@ public(package) fun request_add_validator(self: &mut IotaSystemStateV2, ctx: &Tx
         ELimitExceeded,
     );
 
-    self.validators.request_add_validator(self.parameters.min_validator_joining_stake, ctx);
+    let min_validator_joining_stake: u64 = protocol_config::get_attr(
+        MIN_VALIDATOR_JOINING_STAKE_PARAM,
+    );
+    self.validators.request_add_validator(min_validator_joining_stake, ctx);
 }
 
 /// A validator can call this function to request a removal in the next epoch.
