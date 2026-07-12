@@ -7983,6 +7983,7 @@ dependencies = [
  "iota-sdk",
  "iota-sdk-crypto",
  "iota-sdk-grpc-client",
+ "iota-sdk-grpc-types",
  "iota-sdk-transaction-builder",
  "iota-sdk-types",
  "iota-types",
