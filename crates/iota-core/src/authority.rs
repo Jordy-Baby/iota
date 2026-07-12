@@ -69,6 +69,7 @@ use iota_types::{
     committee::{Committee, EpochId, ProtocolVersion},
     crypto::{AuthorityPublicKey, AuthoritySignInfo, AuthoritySignature, Signer},
     deny_list_v1::check_coin_deny_list_v1,
+    deny_rule_governance::DenyRuleConfig,
     digests::{ChainIdentifier, Digest, ObjectDigest, TransactionDigest, TransactionEffectsDigest},
     dynamic_field::{DynamicFieldInfo, DynamicFieldName, visitor as DFV},
     effects::{
@@ -936,11 +937,16 @@ impl AuthorityState {
     /// Runs deny list, input object validation, gas checks, coin deny list, and
     /// MoveAuthenticator checks. Returns the owned object refs for optional
     /// version validation. Does NOT acquire locks or sign the transaction.
+    ///
+    /// `deny_config` is the deny rule source: the local config pre-consensus;
+    /// post-consensus, the governance-derived active set when
+    /// `deny_rule_governance` is enabled, otherwise the local config.
     #[instrument(level = "trace", skip_all, fields(tx_digest = ?transaction.digest()))]
     pub(crate) async fn handle_transaction_validation_checks(
         &self,
         transaction: &VerifiedTransaction,
         epoch_store: &Arc<AuthorityPerEpochStore>,
+        deny_config: &dyn DenyRuleConfig,
     ) -> IotaResult<Vec<ObjectReference>> {
         let protocol_config = epoch_store.protocol_config();
         let reference_gas_price = epoch_store.reference_gas_price();
@@ -957,7 +963,7 @@ impl AuthorityState {
             transaction.tx_signatures(),
             &transaction.input_objects()?,
             &tx_data.receiving_objects(),
-            &self.config.transaction_deny_config,
+            deny_config,
             self.get_backing_package_store().as_ref(),
         )?;
 
@@ -1124,7 +1130,11 @@ impl AuthorityState {
         let _execution_lock = self.execution_lock_for_signing()?;
 
         let owned_objects = self
-            .handle_transaction_validation_checks(&transaction, epoch_store)
+            .handle_transaction_validation_checks(
+                &transaction,
+                epoch_store,
+                &self.config.transaction_deny_config,
+            )
             .await?;
 
         let epoch = epoch_store.epoch();

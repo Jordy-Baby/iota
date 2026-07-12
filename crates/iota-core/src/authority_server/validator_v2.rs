@@ -221,7 +221,11 @@ impl ValidatorService {
 
         // Content validation: deny checks + owned object version validation.
         let owned_objects = match state
-            .handle_transaction_validation_checks(&verified_tx, epoch_store)
+            .handle_transaction_validation_checks(
+                &verified_tx,
+                epoch_store,
+                &state.config.transaction_deny_config,
+            )
             .await
         {
             Ok(objs) => objs,
