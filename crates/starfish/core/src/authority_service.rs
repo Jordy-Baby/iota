@@ -1806,6 +1806,7 @@ mod tests {
             context.clone(),
             core_dispatcher.clone(),
             dag_state.clone(),
+            block_verifier.clone(),
         );
 
         let header_synchronizer = HeaderSynchronizer::start(
@@ -1898,6 +1899,7 @@ mod tests {
             context.clone(),
             core_dispatcher.clone(),
             dag_state.clone(),
+            block_verifier.clone(),
         );
         let header_synchronizer = HeaderSynchronizer::start(
             network_client.clone(),
@@ -1985,6 +1987,7 @@ mod tests {
             context.clone(),
             core_dispatcher.clone(),
             dag_state.clone(),
+            block_verifier.clone(),
         );
 
         let header_synchronizer = HeaderSynchronizer::start(
@@ -2102,6 +2105,7 @@ mod tests {
             context.clone(),
             core_dispatcher.clone(),
             dag_state.clone(),
+            block_verifier.clone(),
         );
 
         let header_synchronizer = HeaderSynchronizer::start(
@@ -2242,6 +2246,7 @@ mod tests {
             context.clone(),
             core_dispatcher.clone(),
             dag_state.clone(),
+            block_verifier.clone(),
         );
 
         let header_synchronizer = HeaderSynchronizer::start(
@@ -2327,6 +2332,7 @@ mod tests {
             context.clone(),
             core_dispatcher.clone(),
             dag_state.clone(),
+            block_verifier.clone(),
         );
 
         let header_synchronizer = HeaderSynchronizer::start(
@@ -2561,6 +2567,7 @@ mod tests {
             context.clone(),
             core_dispatcher.clone(),
             dag_state.clone(),
+            block_verifier.clone(),
         );
 
         let header_synchronizer = HeaderSynchronizer::start(
@@ -2723,6 +2730,7 @@ mod tests {
             context.clone(),
             core_dispatcher.clone(),
             dag_state.clone(),
+            block_verifier.clone(),
         );
 
         let header_synchronizer = HeaderSynchronizer::start(
@@ -2901,6 +2909,7 @@ mod tests {
             context.clone(),
             core_dispatcher.clone(),
             dag_state.clone(),
+            block_verifier.clone(),
         );
 
         let header_synchronizer = HeaderSynchronizer::start(
@@ -3234,6 +3243,7 @@ mod tests {
             context.clone(),
             core_dispatcher.clone(),
             dag_state.clone(),
+            block_verifier.clone(),
         );
 
         let header_synchronizer = HeaderSynchronizer::start(
@@ -3385,6 +3395,7 @@ mod tests {
             context.clone(),
             core_dispatcher.clone(),
             dag_state.clone(),
+            block_verifier.clone(),
         );
 
         let header_synchronizer = HeaderSynchronizer::start(
@@ -3551,6 +3562,7 @@ mod tests {
             context.clone(),
             core_dispatcher.clone(),
             dag_state.clone(),
+            block_verifier.clone(),
         );
 
         let header_synchronizer = HeaderSynchronizer::start(
@@ -3774,6 +3786,7 @@ mod tests {
             context.clone(),
             core_dispatcher.clone(),
             dag_state.clone(),
+            block_verifier.clone(),
         );
 
         let header_synchronizer = HeaderSynchronizer::start(
@@ -3973,6 +3986,7 @@ mod tests {
             context.clone(),
             core_dispatcher.clone(),
             dag_state.clone(),
+            block_verifier.clone(),
         );
 
         let header_synchronizer = HeaderSynchronizer::start(

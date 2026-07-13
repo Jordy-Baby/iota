@@ -899,6 +899,7 @@ mod tests {
                 context.clone(),
                 core_thread_dispatcher.clone(),
                 dag_state.clone(),
+                block_verifier.clone(),
             );
         let header_synchronizer = HeaderSynchronizer::start(
             network_client.clone(),
@@ -1025,6 +1026,7 @@ mod tests {
                     context.clone(),
                     core_thread_dispatcher.clone(),
                     dag_state.clone(),
+                    block_verifier.clone(),
                 );
             let header_synchronizer = HeaderSynchronizer::start(
                 network_client.clone(),
