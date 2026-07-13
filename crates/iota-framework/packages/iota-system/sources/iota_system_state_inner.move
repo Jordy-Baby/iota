@@ -31,15 +31,20 @@ const SYSTEM_STATE_VERSION_V1: u64 = 1;
 
 /// Protocol config parameter names, read via `protocol_config::get_attr`.
 const MIN_VALIDATOR_JOINING_STAKE_PARAM: vector<u8> = b"min_validator_joining_stake";
+const MIN_VALIDATOR_COUNT_PARAM: vector<u8> = b"min_validator_count";
+const MAX_VALIDATOR_COUNT_PARAM: vector<u8> = b"max_validator_count";
 
 /// A list of system config parameters.
 public struct SystemParametersV1 has store {
     /// The duration of an epoch, in milliseconds.
     epoch_duration_ms: u64,
-    /// Minimum number of active validators at any moment.
+    /// Deprecated: superseded by the `min_validator_count` protocol config
+    /// parameter; retained only for struct layout compatibility and no
+    /// longer read.
     min_validator_count: u64,
-    /// Maximum number of active validators at any moment.
-    /// We do not allow the number of validators in any epoch to go above this.
+    /// Deprecated: superseded by the `max_validator_count` protocol config
+    /// parameter; retained only for struct layout compatibility and no
+    /// longer read.
     max_validator_count: u64,
     /// Deprecated: superseded by the `min_validator_joining_stake` protocol
     /// config parameter; retained only for struct layout compatibility and
@@ -250,16 +255,14 @@ public(package) fun create(
 
 public(package) fun create_system_parameters(
     epoch_duration_ms: u64,
-    // ValidatorV1 committee parameters
-    max_validator_count: u64,
     ctx: &mut TxContext,
 ): SystemParametersV1 {
     SystemParametersV1 {
         epoch_duration_ms,
-        min_validator_count: 4,
-        max_validator_count,
-        // The validator stake thresholds are enforced from the protocol
-        // config; the deprecated fields are recorded as zero.
+        // The validator count limits and stake thresholds are enforced from
+        // the protocol config; the deprecated fields are recorded as zero.
+        min_validator_count: 0,
+        max_validator_count: 0,
         min_validator_joining_stake: 0,
         validator_low_stake_threshold: 0,
         validator_very_low_stake_threshold: 0,
@@ -372,8 +375,9 @@ public(package) fun request_remove_validator_candidate(
 /// stake the validator has doesn't meet the min threshold, or if the number of new validators for the next
 /// epoch has already reached the maximum.
 public(package) fun request_add_validator(self: &mut IotaSystemStateV2, ctx: &TxContext) {
+    let max_validator_count: u64 = protocol_config::get_attr(MAX_VALIDATOR_COUNT_PARAM);
     assert!(
-        self.validators.next_epoch_validator_count() < self.parameters.max_validator_count,
+        self.validators.next_epoch_validator_count() < max_validator_count,
         ELimitExceeded,
     );
 
@@ -389,12 +393,13 @@ public(package) fun request_add_validator(self: &mut IotaSystemStateV2, ctx: &Tx
 /// At the end of the epoch, the `validator` object will be returned to the iota_address
 /// of the validator.
 public(package) fun request_remove_validator(self: &mut IotaSystemStateV2, ctx: &TxContext) {
+    let min_validator_count: u64 = protocol_config::get_attr(MIN_VALIDATOR_COUNT_PARAM);
     // Only check min validator condition if the current number of validators satisfy the constraint.
     // This is so that if we somehow already are in a state where we have less than min validators, it no longer matters
     // and is ok to stay so. This is useful for a test setup.
-    if (self.validators.active_validators_inner().length() >= self.parameters.min_validator_count) {
+    if (self.validators.active_validators_inner().length() >= min_validator_count) {
         assert!(
-            self.validators.next_epoch_validator_count() > self.parameters.min_validator_count,
+            self.validators.next_epoch_validator_count() > min_validator_count,
             ELimitExceeded,
         );
     };
@@ -1123,8 +1128,9 @@ public(package) fun request_add_validator_for_testing(
     min_joining_stake_for_testing: u64,
     ctx: &TxContext,
 ) {
+    let max_validator_count: u64 = protocol_config::get_attr(MAX_VALIDATOR_COUNT_PARAM);
     assert!(
-        self.validators.next_epoch_validator_count() < self.parameters.max_validator_count,
+        self.validators.next_epoch_validator_count() < max_validator_count,
         ELimitExceeded,
     );
 

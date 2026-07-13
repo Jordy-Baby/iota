@@ -13,10 +13,6 @@ use crate::{
     object::Object,
 };
 
-/// Maximum number of active validators at any moment.
-/// We do not allow the number of validators in any epoch to go above this.
-pub const MAX_VALIDATOR_COUNT: u64 = 150;
-
 pub const ADD_STAKE_MUL_COIN_FUN_NAME: Identifier =
     Identifier::from_static("request_add_stake_mul_coin");
 pub const ADD_STAKE_FUN_NAME: Identifier = Identifier::from_static("request_add_stake");

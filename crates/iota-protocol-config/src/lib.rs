@@ -178,6 +178,8 @@ pub const PROTOCOL_VERSION_IIP8: u64 = 20;
 //             Enable validator metadata verification v2.
 //             Move validator stake thresholds (joining stake, low/very low
 //             stake thresholds, grace period) into the protocol config.
+//             Move validator count limits (min/max validator count) into
+//             the protocol config.
 #[derive(Copy, Clone, Debug, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ProtocolVersion(u64);
 
@@ -1441,6 +1443,15 @@ pub struct ProtocolConfig {
     /// `validator_low_stake_threshold` before being removed.
     /// Supersedes `SystemParametersV1::validator_low_stake_grace_period`.
     validator_low_stake_grace_period: Option<u64>,
+
+    /// Minimum number of active validators at any moment.
+    /// Supersedes `SystemParametersV1::min_validator_count`.
+    min_validator_count: Option<u64>,
+
+    /// Maximum number of active validators at any moment. The number of
+    /// validators in any epoch is not allowed to go above this.
+    /// Supersedes `SystemParametersV1::max_validator_count`.
+    max_validator_count: Option<u64>,
 }
 
 // feature flags
@@ -2441,6 +2452,8 @@ impl ProtocolConfig {
             validator_low_stake_threshold: None,
             validator_very_low_stake_threshold: None,
             validator_low_stake_grace_period: None,
+            min_validator_count: None,
+            max_validator_count: None,
             // When adding a new constant, set it to None in the earliest version, like this:
             // new_constant: None,
         };
@@ -3012,6 +3025,8 @@ impl ProtocolConfig {
                     cfg.validator_low_stake_threshold = Some(1_500_000_000_000_000);
                     cfg.validator_very_low_stake_threshold = Some(1_000_000_000_000_000);
                     cfg.validator_low_stake_grace_period = Some(7);
+                    cfg.min_validator_count = Some(4);
+                    cfg.max_validator_count = Some(150);
                 }
                 // Use this template when making changes:
                 //

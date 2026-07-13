@@ -81,7 +81,6 @@ public fun create_iota_system_state_for_testing(
 ) {
     let system_parameters = iota_system_state_inner::create_system_parameters(
         42, // epoch_duration_ms, doesn't matter what number we put here
-        150, // max_validator_count
         ctx,
     );
 
