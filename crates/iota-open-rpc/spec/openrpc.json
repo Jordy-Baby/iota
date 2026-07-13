@@ -2037,7 +2037,9 @@
                 "min_move_binary_format_version": {
                   "u32": "6"
                 },
-                "min_validator_joining_stake": null,
+                "min_validator_joining_stake": {
+                  "u64": "2000000000000000"
+                },
                 "move_binary_format_version": {
                   "u32": "7"
                 },
@@ -2206,8 +2208,12 @@
                 "types_is_one_time_witness_type_tag_cost_per_byte": {
                   "u64": "2"
                 },
-                "validator_low_stake_grace_period": null,
-                "validator_low_stake_threshold": null,
+                "validator_low_stake_grace_period": {
+                  "u64": "7"
+                },
+                "validator_low_stake_threshold": {
+                  "u64": "1500000000000000"
+                },
                 "validator_target_reward": {
                   "u64": "767000000000000"
                 },
@@ -2217,7 +2223,9 @@
                 "validator_validate_metadata_data_cost_per_byte": {
                   "u64": "2"
                 },
-                "validator_very_low_stake_threshold": null,
+                "validator_very_low_stake_threshold": {
+                  "u64": "1000000000000000"
+                },
                 "vdf_hash_to_input_cost": {
                   "u64": "100"
                 },
