@@ -13,7 +13,7 @@ use iota_json_rpc_types::{
     TransactionBlockBytes,
 };
 use iota_macros::sim_test;
-use iota_protocol_config::ProtocolConfig;
+use iota_protocol_config::{Chain, ProtocolConfig, ProtocolVersion};
 use iota_sdk_types::{ObjectData, ObjectId, Owner, StructTag};
 use iota_swarm_config::genesis_config::{
     AccountConfig, ValidatorGenesisConfig, ValidatorGenesisConfigBuilder,
@@ -22,7 +22,6 @@ use iota_test_transaction_builder::TestTransactionBuilder;
 use iota_types::{
     crypto::deterministic_random_account_key,
     digests::TransactionDigest,
-    governance::MIN_VALIDATOR_JOINING_STAKE_NANOS,
     id::UID,
     iota_system_state::{IotaSystemStateTrait, iota_system_state_summary::IotaSystemStateSummary},
     object::{MoveObject, MoveObjectExt, OBJECT_START_VERSION, ObjectInner},
@@ -102,13 +101,12 @@ async fn execute_add_validator_transactions(
     });
 
     let address = (&new_validator.account_key_pair.public()).into();
+    let min_validator_joining_stake =
+        ProtocolConfig::get_for_version(ProtocolVersion::MAX, Chain::Unknown)
+            .min_validator_joining_stake();
     let stake_coin = test_cluster
         .wallet
-        .gas_for_owner_budget(
-            address,
-            MIN_VALIDATOR_JOINING_STAKE_NANOS,
-            Default::default(),
-        )
+        .gas_for_owner_budget(address, min_validator_joining_stake, Default::default())
         .await
         .unwrap()
         .1

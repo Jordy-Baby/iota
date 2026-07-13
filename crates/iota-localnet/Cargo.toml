@@ -29,6 +29,7 @@ iota-genesis-builder.workspace = true
 iota-graphql-rpc = { workspace = true, optional = true }
 iota-indexer = { workspace = true, optional = true }
 iota-keys.workspace = true
+iota-protocol-config.workspace = true
 iota-sdk.workspace = true
 iota-sdk-types.workspace = true
 iota-swarm.workspace = true
@@ -41,7 +42,6 @@ telemetry-subscribers.workspace = true
 iota-common.workspace = true
 iota-macros.workspace = true
 iota-metrics.workspace = true
-iota-protocol-config.workspace = true
 iota-simulator.workspace = true
 
 [target.'cfg(msim)'.dependencies]

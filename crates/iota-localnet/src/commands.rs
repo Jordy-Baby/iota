@@ -33,6 +33,7 @@ use iota_indexer::{
     test_utils::{IndexerTypeConfig, start_test_indexer},
 };
 use iota_keys::keystore::{AccountKeystore, FileBasedKeystore, Keystore};
+use iota_protocol_config::{Chain, ProtocolConfig};
 use iota_sdk::iota_client_config::{IotaClientConfig, IotaEnv};
 use iota_sdk_types::Address;
 use iota_swarm::memory::Swarm;
@@ -42,7 +43,9 @@ use iota_swarm_config::{
     network_config_builder::ConfigBuilder,
     node_config_builder::FullnodeConfigBuilder,
 };
-use iota_types::{base_types::address_from_iota_pub_key, crypto::IotaKeyPair};
+use iota_types::{
+    base_types::address_from_iota_pub_key, committee::ProtocolVersion, crypto::IotaKeyPair,
+};
 use rand::rngs::OsRng;
 use tempfile::tempdir;
 use tracing::{info, warn};
@@ -944,9 +947,12 @@ async fn genesis(
                 keystore.save()?;
 
                 // Calculate extra allocations (validator, faucet)
+                let validator_low_stake_threshold =
+                    ProtocolConfig::get_for_version(ProtocolVersion::MAX, Chain::Unknown)
+                        .validator_low_stake_threshold();
                 let validator_extra = num_validators as u64
                     * (iota_swarm_config::genesis_config::DEFAULT_GAS_AMOUNT
-                        + iota_types::governance::VALIDATOR_LOW_STAKE_THRESHOLD_NANOS);
+                        + validator_low_stake_threshold);
                 let mut faucet_extra = 0u64;
                 if with_faucet {
                     faucet_extra = iota_swarm_config::genesis_config::DEFAULT_GAS_AMOUNT

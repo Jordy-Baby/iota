@@ -16,8 +16,10 @@ use iota_genesis_builder::{
     SnapshotSource,
     validator_info::{GenesisValidatorInfo, ValidatorInfo},
 };
+use iota_protocol_config::{Chain, ProtocolConfig};
 use iota_sdk_types::Address;
 use iota_types::{
+    committee::ProtocolVersion,
     crypto::{
         AccountKeyPair, AuthorityKeyPair, AuthorityPublicKeyBytes, IotaKeyPair, NetworkKeyPair,
         NetworkPublicKey, PublicKey, generate_proof_of_possession, get_key_pair_from_rng,
@@ -206,7 +208,8 @@ impl ValidatorGenesisConfigBuilder {
             gas_price,
             commission_rate: DEFAULT_COMMISSION_RATE,
             primary_address,
-            stake: iota_types::governance::VALIDATOR_LOW_STAKE_THRESHOLD_NANOS,
+            stake: ProtocolConfig::get_for_version(ProtocolVersion::MAX, Chain::Unknown)
+                .validator_low_stake_threshold(),
             name: None,
         }
     }
@@ -266,7 +269,8 @@ fn default_socket_address() -> SocketAddr {
 }
 
 fn default_stake() -> u64 {
-    iota_types::governance::VALIDATOR_LOW_STAKE_THRESHOLD_NANOS
+    ProtocolConfig::get_for_version(ProtocolVersion::MAX, Chain::Unknown)
+        .validator_low_stake_threshold()
 }
 
 fn default_bls12381_key_pair() -> AuthorityKeyPair {

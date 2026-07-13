@@ -31,7 +31,7 @@ use iota_json_rpc_types::{
 };
 use iota_keys::keystore::{AccountKeystore, FileBasedKeystore, Keystore};
 use iota_node::IotaNodeHandle;
-use iota_protocol_config::{Chain, ProtocolVersion};
+use iota_protocol_config::{Chain, ProtocolConfig, ProtocolVersion};
 use iota_sdk::{
     IotaClient, IotaClientBuilder,
     apis::QuorumDriverApi,
@@ -57,7 +57,6 @@ use iota_types::{
     digests::TransactionDigest,
     effects::{TransactionEffects, TransactionEvents},
     error::IotaResult,
-    governance::MIN_VALIDATOR_JOINING_STAKE_NANOS,
     iota_system_state::{
         IotaSystemState, IotaSystemStateTrait,
         epoch_start_iota_system_state::EpochStartSystemStateTrait,
@@ -1180,11 +1179,14 @@ impl TestClusterBuilder {
         mut self,
         addresses: impl IntoIterator<Item = Address>,
     ) -> Self {
+        let min_validator_joining_stake =
+            ProtocolConfig::get_for_version(ProtocolVersion::MAX, Chain::Unknown)
+                .min_validator_joining_stake();
         self.get_or_init_genesis_config()
             .accounts
             .extend(addresses.into_iter().map(|address| AccountConfig {
                 address: Some(address),
-                gas_amounts: vec![DEFAULT_GAS_AMOUNT, MIN_VALIDATOR_JOINING_STAKE_NANOS],
+                gas_amounts: vec![DEFAULT_GAS_AMOUNT, min_validator_joining_stake],
             }));
         self
     }

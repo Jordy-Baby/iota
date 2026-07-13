@@ -14,6 +14,7 @@ use fastcrypto::{
     encoding::{Base64, Encoding},
     hash::HashFunction,
 };
+use iota_protocol_config::{Chain, ProtocolConfig};
 use iota_sdk_types::{Address, ObjectId};
 use iota_types::{
     clock::Clock,
@@ -403,18 +404,17 @@ impl GenesisCeremonyParameters {
     }
 
     pub fn to_genesis_chain_parameters(&self) -> GenesisChainParameters {
+        let protocol_config = ProtocolConfig::get_for_version(ProtocolVersion::MAX, Chain::Unknown);
         GenesisChainParameters {
             protocol_version: self.protocol_version.as_u64(),
             chain_start_timestamp_ms: self.chain_start_timestamp_ms,
             epoch_duration_ms: self.epoch_duration_ms,
             max_validator_count: iota_types::governance::MAX_VALIDATOR_COUNT,
-            min_validator_joining_stake: iota_types::governance::MIN_VALIDATOR_JOINING_STAKE_NANOS,
-            validator_low_stake_threshold:
-                iota_types::governance::VALIDATOR_LOW_STAKE_THRESHOLD_NANOS,
-            validator_very_low_stake_threshold:
-                iota_types::governance::VALIDATOR_VERY_LOW_STAKE_THRESHOLD_NANOS,
-            validator_low_stake_grace_period:
-                iota_types::governance::VALIDATOR_LOW_STAKE_GRACE_PERIOD,
+            min_validator_joining_stake: protocol_config.min_validator_joining_stake(),
+            validator_low_stake_threshold: protocol_config.validator_low_stake_threshold(),
+            validator_very_low_stake_threshold: protocol_config
+                .validator_very_low_stake_threshold(),
+            validator_low_stake_grace_period: protocol_config.validator_low_stake_grace_period(),
         }
     }
 }
@@ -470,7 +470,9 @@ impl TokenDistributionSchedule {
 
         // Check that all validators have sufficient stake allocated to ensure they meet
         // the minimum stake threshold
-        let minimum_required_stake = iota_types::governance::VALIDATOR_LOW_STAKE_THRESHOLD_NANOS;
+        let minimum_required_stake =
+            ProtocolConfig::get_for_version(ProtocolVersion::MAX, Chain::Unknown)
+                .validator_low_stake_threshold();
         for (validator, stake) in validators {
             if stake < minimum_required_stake {
                 anyhow::bail!(
@@ -484,7 +486,9 @@ impl TokenDistributionSchedule {
     pub fn new_for_validators_with_default_allocation<I: IntoIterator<Item = Address>>(
         validators: I,
     ) -> Self {
-        let default_allocation = iota_types::governance::VALIDATOR_LOW_STAKE_THRESHOLD_NANOS;
+        let default_allocation =
+            ProtocolConfig::get_for_version(ProtocolVersion::MAX, Chain::Unknown)
+                .validator_low_stake_threshold();
 
         let allocations = validators
             .into_iter()
@@ -602,7 +606,9 @@ impl TokenDistributionScheduleBuilder {
         &mut self,
         validators: I,
     ) {
-        let default_allocation = iota_types::governance::VALIDATOR_LOW_STAKE_THRESHOLD_NANOS;
+        let default_allocation =
+            ProtocolConfig::get_for_version(ProtocolVersion::MAX, Chain::Unknown)
+                .validator_low_stake_threshold();
 
         for validator in validators {
             self.add_allocation(TokenAllocation {
@@ -671,11 +677,14 @@ impl Delegations {
         validators: impl IntoIterator<Item = Address>,
         delegator: Address,
     ) -> Self {
+        let min_validator_joining_stake =
+            ProtocolConfig::get_for_version(ProtocolVersion::MAX, Chain::Unknown)
+                .min_validator_joining_stake();
         let validator_allocations = validators
             .into_iter()
             .map(|address| ValidatorAllocation {
                 validator: address,
-                amount_nanos_to_stake: iota_types::governance::MIN_VALIDATOR_JOINING_STAKE_NANOS,
+                amount_nanos_to_stake: min_validator_joining_stake,
                 amount_nanos_to_pay_gas: 0,
             })
             .collect();
