@@ -122,6 +122,7 @@ use iota_types::{
     base_types::{AuthorityName, ConciseableName, EpochId},
     committee::Committee,
     crypto::{AuthoritySignature, IotaAuthoritySignature, KeypairTraits},
+    deny_rule_governance::{DenyRuleProposal, DenyRuleSet},
     digests::{ChainIdentifier, get_devnet_chain_identifier},
     error::{IotaError, IotaResult},
     executable_transaction::VerifiedExecutableTransaction,
@@ -1990,6 +1991,24 @@ impl IotaNode {
                 components
                     .consensus_adapter
                     .submit(transaction, None, &cur_epoch_store)?;
+
+                // Announce the local deny rules. Vote tracking is
+                // epoch-scoped, so this re-announces on every epoch change.
+                if config.deny_rule_governance() {
+                    let proposed_rules = self.config.transaction_deny_config.to_deny_rule_set();
+                    if proposed_rules != DenyRuleSet::default() {
+                        let transaction = ConsensusTransaction::new_deny_rule_proposal(
+                            DenyRuleProposal::new(self.state.name, proposed_rules),
+                        );
+                        info!(
+                            tracking_id = ?transaction.get_tracking_id(),
+                            "submitting deny rule proposal to consensus"
+                        );
+                        components
+                            .consensus_adapter
+                            .submit(transaction, None, &cur_epoch_store)?;
+                    }
+                }
             } else if self.state.is_active_validator(&cur_epoch_store)
                 && cur_epoch_store
                     .protocol_config()

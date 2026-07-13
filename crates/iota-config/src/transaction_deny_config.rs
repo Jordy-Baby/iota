@@ -5,7 +5,7 @@
 use std::collections::HashSet;
 
 use iota_sdk_types::{Address, ObjectId};
-use iota_types::deny_rule_governance::DenyRuleConfig;
+use iota_types::deny_rule_governance::{DenyRuleConfig, DenyRuleSet};
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 
@@ -117,6 +117,22 @@ impl TransactionDenyConfig {
 
     pub fn move_authenticator_disabled(&self) -> bool {
         self.move_authenticator_disabled
+    }
+
+    /// The full-state [`DenyRuleSet`] equivalent of this config, for
+    /// announcing it as a deny rule proposal.
+    pub fn to_deny_rule_set(&self) -> DenyRuleSet {
+        DenyRuleSet {
+            denied_addresses: self.address_deny_list.iter().copied().collect(),
+            denied_objects: self.object_deny_list.iter().copied().collect(),
+            denied_packages: self.package_deny_list.iter().copied().collect(),
+            package_publish_disabled: self.package_publish_disabled,
+            package_upgrade_disabled: self.package_upgrade_disabled,
+            shared_object_disabled: self.shared_object_disabled,
+            user_transaction_disabled: self.user_transaction_disabled,
+            receiving_objects_disabled: self.receiving_objects_disabled,
+            move_authenticator_disabled: self.move_authenticator_disabled,
+        }
     }
 }
 
@@ -233,6 +249,7 @@ impl DenyRuleConfig for TransactionDenyConfig {
 #[cfg(test)]
 mod tests {
     use iota_sdk_types::{Address, ObjectId};
+    use iota_types::deny_rule_governance::DenyRuleSet;
 
     use super::{DenyRuleConfig, TransactionDenyConfig, TransactionDenyConfigBuilder};
 
@@ -271,5 +288,35 @@ mod tests {
         assert!(!empty.has_denied_addresses());
         assert!(!empty.has_denied_objects());
         assert!(!empty.has_denied_packages());
+    }
+
+    #[test]
+    fn to_deny_rule_set_round_trips_lists_and_switches() {
+        let addr = Address::new([1u8; 32]);
+        let obj = ObjectId::new([2u8; 32]);
+        let pkg = ObjectId::new([3u8; 32]);
+        let config = TransactionDenyConfigBuilder::new()
+            .add_denied_address(addr)
+            .add_denied_object(obj)
+            .add_denied_package(pkg)
+            .disable_user_transaction()
+            .disable_move_authenticator()
+            .build();
+
+        let rules = config.to_deny_rule_set();
+        assert_eq!(rules.denied_addresses, [addr].into());
+        assert_eq!(rules.denied_objects, [obj].into());
+        assert_eq!(rules.denied_packages, [pkg].into());
+        assert!(rules.user_transaction_disabled);
+        assert!(rules.move_authenticator_disabled);
+        assert!(!rules.shared_object_disabled);
+        assert!(!rules.package_publish_disabled);
+
+        // An empty config produces the default (nothing denied) set — the node
+        // uses this to decide whether to submit a proposal at all.
+        assert_eq!(
+            TransactionDenyConfig::default().to_deny_rule_set(),
+            DenyRuleSet::default()
+        );
     }
 }

@@ -1,7 +1,10 @@
 // Copyright (c) 2026 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::BTreeSet;
+use std::{
+    collections::BTreeSet,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use iota_sdk_types::{Address, ObjectId};
 use serde::{Deserialize, Serialize};
@@ -119,6 +122,24 @@ pub struct DenyRuleProposal {
     pub generation: u64,
     /// The complete set of rules this authority proposes.
     pub proposed_rules: DenyRuleSet,
+}
+
+impl DenyRuleProposal {
+    /// Creates a proposal with a wall-clock generation, so a resubmission
+    /// supersedes this authority's earlier proposals.
+    pub fn new(authority: AuthorityName, proposed_rules: DenyRuleSet) -> Self {
+        let generation = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("IOTA did not exist prior to 1970")
+            .as_millis()
+            .try_into()
+            .expect("This build of iota is not supported in the year 500,000,000");
+        Self {
+            authority,
+            generation,
+            proposed_rules,
+        }
+    }
 }
 
 #[cfg(test)]
