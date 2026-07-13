@@ -404,17 +404,22 @@ impl GenesisCeremonyParameters {
     }
 
     pub fn to_genesis_chain_parameters(&self) -> GenesisChainParameters {
-        let protocol_config = ProtocolConfig::get_for_version(ProtocolVersion::MAX, Chain::Unknown);
+        assert!(
+            self.protocol_version.as_u64() >= 31,
+            "genesis requires protocol version >= 31: the iota-system framework reads \
+             the validator stake thresholds from the protocol config"
+        );
         GenesisChainParameters {
             protocol_version: self.protocol_version.as_u64(),
             chain_start_timestamp_ms: self.chain_start_timestamp_ms,
             epoch_duration_ms: self.epoch_duration_ms,
             max_validator_count: iota_types::governance::MAX_VALIDATOR_COUNT,
-            min_validator_joining_stake: protocol_config.min_validator_joining_stake(),
-            validator_low_stake_threshold: protocol_config.validator_low_stake_threshold(),
-            validator_very_low_stake_threshold: protocol_config
-                .validator_very_low_stake_threshold(),
-            validator_low_stake_grace_period: protocol_config.validator_low_stake_grace_period(),
+            // The validator stake thresholds are enforced from the protocol
+            // config; the deprecated fields are recorded as zero.
+            min_validator_joining_stake: 0,
+            validator_low_stake_threshold: 0,
+            validator_very_low_stake_threshold: 0,
+            validator_low_stake_grace_period: 0,
         }
     }
 }

@@ -252,20 +252,18 @@ public(package) fun create_system_parameters(
     epoch_duration_ms: u64,
     // ValidatorV1 committee parameters
     max_validator_count: u64,
-    min_validator_joining_stake: u64,
-    validator_low_stake_threshold: u64,
-    validator_very_low_stake_threshold: u64,
-    validator_low_stake_grace_period: u64,
     ctx: &mut TxContext,
 ): SystemParametersV1 {
     SystemParametersV1 {
         epoch_duration_ms,
         min_validator_count: 4,
         max_validator_count,
-        min_validator_joining_stake,
-        validator_low_stake_threshold,
-        validator_very_low_stake_threshold,
-        validator_low_stake_grace_period,
+        // The validator stake thresholds are enforced from the protocol
+        // config; the deprecated fields are recorded as zero.
+        min_validator_joining_stake: 0,
+        validator_low_stake_threshold: 0,
+        validator_very_low_stake_threshold: 0,
+        validator_low_stake_grace_period: 0,
         extra_fields: bag::new(ctx),
     }
 }
