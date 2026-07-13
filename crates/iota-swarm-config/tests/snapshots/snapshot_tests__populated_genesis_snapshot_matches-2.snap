@@ -8,7 +8,7 @@ system_state_version: 1
 iota_treasury_cap:
   inner:
     id:
-      id: "0x675d791784d71c5ab30866f67e26cb227e6cd58df582178fc96b4d5649da1ef3"
+      id: "0x5a95edf747ce6267bab0a8dc6d69c211044c3c3e410500d3ea89d8bf6064d24e"
     total_supply:
       value: "751500000000000000"
 validators:
@@ -244,13 +244,13 @@ validators:
         next_epoch_primary_address: ~
         extra_fields:
           id:
-            id: "0x091d95aae641e7ee2eb8b8754e9ba575398522c509973861dc023e70c0839482"
+            id: "0x13e78ee6096efb5fa4c6055f07552867427639252f131af9521d8aa4dd9af53f"
           size: 0
       voting_power: 10000
-      operation_cap_id: "0x8517e53d89dff659b926e0194f465611e7b7d934119f78ef469c3381b101923b"
+      operation_cap_id: "0x16127a944c36cd58eebfe002adbc44d38a80b09a6ddfedb4b0e0c7a6b7a33bd6"
       gas_price: 1000
       staking_pool:
-        id: "0xb8fb9cd0f61ded1e6ce916265ae990d65b38b86cdaf72ae230468de8f37236c4"
+        id: "0x5a4431ba1f8a0052f7c0dc9232c906b71c31e41fe879109f6dd93a104f0cec37"
         activation_epoch: 0
         deactivation_epoch: ~
         iota_balance: 1500000000000000
@@ -258,14 +258,14 @@ validators:
           value: 0
         pool_token_balance: 1500000000000000
         exchange_rates:
-          id: "0x0cf1f200bdd69be6350c89f49a52d40144ad558f2d0d283b27200adbd025ea66"
+          id: "0x05af17a8c47f45f3909e6016da083e5b6d230656ee77103e9bb3b3cc80dc9f60"
           size: 1
         pending_stake: 0
         pending_total_iota_withdraw: 0
         pending_pool_token_withdraw: 0
         extra_fields:
           id:
-            id: "0x281f03f825f0b38229b47b9e9f6edfd0d8e16a9f6e30fbc5ccadcd2e229004a9"
+            id: "0xf47059fccd15e1c550bd2c506048ffef3acb400c56200ef1f7311cf07b926358"
           size: 0
       commission_rate: 200
       next_epoch_stake: 1500000000000000
@@ -273,27 +273,27 @@ validators:
       next_epoch_commission_rate: 200
       extra_fields:
         id:
-          id: "0x25fcd93a2cad149131a28af9e4992865e8daeb8596aebea427690f6f5b062d03"
+          id: "0x807f4fbd2038b9847ab8906a1d1ecd750453912735a371c80db5cf566d10898a"
         size: 0
   pending_active_validators:
     contents:
-      id: "0x5358637a92b7736fd39114f88f71bb7968471bb6d9812a9c1bd2954fc6803038"
+      id: "0xdb41f52962355d20857cfb07f745c48e8719492648113703cd3801921ecc1396"
       size: 0
   pending_removals: []
   staking_pool_mappings:
-    id: "0x8b9b5134b65879d4fef63fe75cff8fb0fb5de147b8a347e4ca9fe25fd54b8ec9"
+    id: "0xbc359b2f410f6d3d3b25abed095425df4ec2b7782ec17b770eda9d2a4d388b8a"
     size: 1
   inactive_validators:
-    id: "0xf738af51649dca99124923927266b52cafcc20a6387b10092125a2b3b6b7aea2"
+    id: "0xc648360a59602db67153edeabe97b7d44443287fca43dba5d1852ba79856bad0"
     size: 0
   validator_candidates:
-    id: "0x0fca109f0e9a114617b7f2f36cd7b99ccd8524b6b9f2598c2137ec83de0457fa"
+    id: "0x7110e3007e91e72fb943c7525a0db60aeb28b4e636664488c3824785707b6759"
     size: 0
   at_risk_validators:
     contents: []
   extra_fields:
     id:
-      id: "0xf7b7003f8e4e8c5cce4082e28fce240ff7ae96af01e4b11428d1d81f46aaa2fd"
+      id: "0x0df85e63997874612af85329a1b01c3ecf0149ffbdd10ef7f8c66b1715c89972"
     size: 0
 storage_fund:
   total_object_storage_rebates:
@@ -304,13 +304,13 @@ parameters:
   epoch_duration_ms: 86400000
   min_validator_count: 4
   max_validator_count: 150
-  min_validator_joining_stake: 2000000000000000
-  validator_low_stake_threshold: 1500000000000000
-  validator_very_low_stake_threshold: 1000000000000000
-  validator_low_stake_grace_period: 7
+  min_validator_joining_stake: 0
+  validator_low_stake_threshold: 0
+  validator_very_low_stake_threshold: 0
+  validator_low_stake_grace_period: 0
   extra_fields:
     id:
-      id: "0xf1414ffb59d67dc78026227af0edb1efa90d026014d611e2519ee094b2547275"
+      id: "0x66e7273a1cb75432a54a334f329761d42f6e81dd1d1dedc627c1e6cfee2cbb4e"
     size: 0
 iota_system_admin_cap:
   dummy_field: false
@@ -327,5 +327,5 @@ safe_mode_non_refundable_storage_fee: 0
 epoch_start_timestamp_ms: 10
 extra_fields:
   id:
-    id: "0x2b1a79e64f44d9d7545f693de554ed699a86072b243ad305d77b4c285cfc2bb2"
+    id: "0xf353822fefac48beb0b403c724849282d02d68dd5a9e886e9528e38eeae56497"
   size: 0
