@@ -5,7 +5,6 @@
 use std::{collections::BTreeMap, path::PathBuf};
 
 use insta::assert_json_snapshot;
-use iota_json_rpc_types::IotaTransactionBlockEffectsAPI;
 use iota_sdk_types::{Address, Identifier, ObjectId, ObjectReference, gas::GasCostSummary};
 use iota_swarm_config::genesis_config::{AccountConfig, DEFAULT_GAS_AMOUNT};
 use iota_test_transaction_builder::{
@@ -231,9 +230,12 @@ async fn run_actual_costs()
         let gas_used = test_cluster
             .sign_and_execute_transaction(&tx)
             .await
-            .effects
+            .effects()
             .unwrap()
-            .gas_cost_summary()
+            .effects()
+            .unwrap()
+            .as_v1()
+            .gas_cost_summary
             .clone();
 
         ret.insert(tx_type, gas_used);
