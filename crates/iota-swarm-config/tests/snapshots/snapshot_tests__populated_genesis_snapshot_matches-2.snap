@@ -8,7 +8,7 @@ system_state_version: 1
 iota_treasury_cap:
   inner:
     id:
-      id: "0x5a95edf747ce6267bab0a8dc6d69c211044c3c3e410500d3ea89d8bf6064d24e"
+      id: "0x6217722f7bc3de40e54be6ed978a93983b2ac28a9f5289464b5c58bcc93e13e7"
     total_supply:
       value: "751500000000000000"
 validators:
@@ -244,13 +244,13 @@ validators:
         next_epoch_primary_address: ~
         extra_fields:
           id:
-            id: "0x13e78ee6096efb5fa4c6055f07552867427639252f131af9521d8aa4dd9af53f"
+            id: "0xd1714c169dfa06cdec23a19d3e8ed78ead773ccd9cd9d082601d8578c1606138"
           size: 0
       voting_power: 10000
-      operation_cap_id: "0x16127a944c36cd58eebfe002adbc44d38a80b09a6ddfedb4b0e0c7a6b7a33bd6"
+      operation_cap_id: "0x242f031fb2a7f1dac959b2bf97f0fc15a1decb873151cb9637c21bcab7cab258"
       gas_price: 1000
       staking_pool:
-        id: "0x5a4431ba1f8a0052f7c0dc9232c906b71c31e41fe879109f6dd93a104f0cec37"
+        id: "0x1aefb5fe8994eec0204107dafec609feef903ee4114df3601ce84a28bf2d0231"
         activation_epoch: 0
         deactivation_epoch: ~
         iota_balance: 1500000000000000
@@ -258,14 +258,14 @@ validators:
           value: 0
         pool_token_balance: 1500000000000000
         exchange_rates:
-          id: "0x05af17a8c47f45f3909e6016da083e5b6d230656ee77103e9bb3b3cc80dc9f60"
+          id: "0xe022bcbd6a9143158838a35a95af6f0c277b97416046c1c6eaf588e425dc44ff"
           size: 1
         pending_stake: 0
         pending_total_iota_withdraw: 0
         pending_pool_token_withdraw: 0
         extra_fields:
           id:
-            id: "0xf47059fccd15e1c550bd2c506048ffef3acb400c56200ef1f7311cf07b926358"
+            id: "0x9e08faaf50855041d09c3bd4fde7dd61dcb541557ea63076abe68bc77c77017b"
           size: 0
       commission_rate: 200
       next_epoch_stake: 1500000000000000
@@ -273,27 +273,27 @@ validators:
       next_epoch_commission_rate: 200
       extra_fields:
         id:
-          id: "0x807f4fbd2038b9847ab8906a1d1ecd750453912735a371c80db5cf566d10898a"
+          id: "0x970a59da22eaf59d83d40e0f37dd0ffaa5b3b4a3252a3576bc103b4cc260dc6e"
         size: 0
   pending_active_validators:
     contents:
-      id: "0xdb41f52962355d20857cfb07f745c48e8719492648113703cd3801921ecc1396"
+      id: "0xfbfee7180e44a855e9413d424ad6d41ca33a3c9f78931eb5293357ea0bd8ef2b"
       size: 0
   pending_removals: []
   staking_pool_mappings:
-    id: "0xbc359b2f410f6d3d3b25abed095425df4ec2b7782ec17b770eda9d2a4d388b8a"
+    id: "0xf6de2b58c0084766463e17be74e0c909c230a8dc4b3d424621d25c4d997c3992"
     size: 1
   inactive_validators:
-    id: "0xc648360a59602db67153edeabe97b7d44443287fca43dba5d1852ba79856bad0"
+    id: "0x33cb9dd47c1cd708bc2406131280cb0141703a4b0a02e44ee431ecf4dd1a22d8"
     size: 0
   validator_candidates:
-    id: "0x7110e3007e91e72fb943c7525a0db60aeb28b4e636664488c3824785707b6759"
+    id: "0x06880c99e41f639ea89336d8c910231efbc8f812f9508e9435d7e94c22d56623"
     size: 0
   at_risk_validators:
     contents: []
   extra_fields:
     id:
-      id: "0x0df85e63997874612af85329a1b01c3ecf0149ffbdd10ef7f8c66b1715c89972"
+      id: "0x679ebf18d001bfa921643babbcbf4a7d07e974f523e4a526be7cbaa04a265ee6"
     size: 0
 storage_fund:
   total_object_storage_rebates:
@@ -302,15 +302,15 @@ storage_fund:
     value: 0
 parameters:
   epoch_duration_ms: 86400000
-  min_validator_count: 4
-  max_validator_count: 150
+  min_validator_count: 0
+  max_validator_count: 0
   min_validator_joining_stake: 0
   validator_low_stake_threshold: 0
   validator_very_low_stake_threshold: 0
   validator_low_stake_grace_period: 0
   extra_fields:
     id:
-      id: "0x66e7273a1cb75432a54a334f329761d42f6e81dd1d1dedc627c1e6cfee2cbb4e"
+      id: "0xab2bb90ba1b8cd2dd2dedb95e82e4ef21fe5f623e118b738586d785a9a2d2ea2"
     size: 0
 iota_system_admin_cap:
   dummy_field: false
@@ -327,5 +327,5 @@ safe_mode_non_refundable_storage_fee: 0
 epoch_start_timestamp_ms: 10
 extra_fields:
   id:
-    id: "0xf353822fefac48beb0b403c724849282d02d68dd5a9e886e9528e38eeae56497"
+    id: "0x17cf9b58b033ac9c7b350a08be433d0e4f36ee770a9f26bd377dfd001c563a0c"
   size: 0
