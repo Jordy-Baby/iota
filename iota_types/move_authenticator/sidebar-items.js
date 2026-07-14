@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["MoveAuthenticator"],"struct":["MoveAuthenticatorV1"],"trait":["MoveAuthenticatorExt"]};
